@@ -5,8 +5,9 @@
 # Makes Linux Mint 22.x Xfce look and behave like macOS, as lightly as possible: Cmd-key
 # shortcuts (Toshy), a menu bar with a global menu, a dock, Spotlight and Launchpad (rofi),
 # Mission Control (skippy-xd), hot corners, 3-finger desktop swipes (Touchégg) with the
-# macOS slide, a macOS-like Cmd+Tab, the volume click, and automatic brightness on Macs.
-# See README.md next to this script for the full list and how to undo it.
+# macOS slide, a macOS-like Cmd+Tab, the volume click, automatic brightness on Macs, and
+# the SSH key unlocked from the login keyring like the Keychain. Each part has its own folder
+# here and can also be installed alone with its install.sh. See the README for the full list.
 #
 # Usage:
 #   ./install.sh                  everything (asks for sudo once, for packages)
@@ -53,8 +54,8 @@ setup_packages() {
         zram-tools                                   # compressed swap in RAM
     )
     local d p
-    for d in hotcorner desktop-slide volume-feedback disk-label auto-brightness; do
-        while read -r p; do pkgs+=("$p"); done < <(packages_of "$ROOT/$d")
+    for d in hotcorner desktop-slide volume-feedback disk-label auto-brightness ssh-keyring; do
+        while read -r p; do pkgs+=("$p"); done < <(packages_of "$HERE/$d")
     done
     is_mac    && pkgs+=(mbpfan)                      # MacBook fan control
     is_laptop && pkgs+=(tlp)                         # battery life
@@ -439,7 +440,7 @@ setup_desktop_icons() {
         xfset $d /desktop-icons/gravity int 2    # arrange from the top right, in columns
         xfdesktop --arrange || true
     fi
-    "$ROOT/disk-label/install.sh"
+    "$HERE/disk-label/install.sh"
 }
 
 # ==============================================================================
@@ -476,7 +477,10 @@ setup_helpers() {
     (setsid "$BIN/touchegg-client" >/dev/null 2>&1 &)   # replaces any running client; reloads the config
 
     local u
-    for u in hotcorner desktop-slide volume-feedback auto-brightness; do "$ROOT/$u/install.sh"; done
+    for u in hotcorner desktop-slide volume-feedback auto-brightness; do "$HERE/$u/install.sh"; done
+    # the SSH key unlocked at login from the login keyring, like the macOS Keychain
+    [[ -f "$HOME/.ssh/id_ed25519" ]] && "$HERE/ssh-keyring/install.sh"
+    return 0
 }
 
 # ==============================================================================

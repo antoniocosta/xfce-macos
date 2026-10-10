@@ -6,19 +6,34 @@ fits. The goal is that someone coming from a Mac doesn't have to relearn anythin
 shortcuts, gestures, menu bar, dock, Mission Control, hot corners, and settings with the same
 names, where a Mac user would look for them.
 
-`macos-xfce/` sets up the whole thing. Each utility can also be installed on its own.
+`macos-xfce/` is the core: one installer sets up everything macOS does. Each part lives in
+its own folder inside it and can also be installed alone. `extras/` holds things macOS
+doesn't do out of the box.
 
-| Utility | What it does |
+```
+macos-xfce/          the core: ./macos-xfce/install.sh sets up all of it
+  hotcorner/         ├ hot corners
+  desktop-slide/     ├ the slide between desktops
+  volume-feedback/   ├ the volume click
+  disk-label/        ├ "Macintosh HD" with free space on the desktop
+  auto-brightness/   ├ automatic screen and keyboard brightness
+  ssh-keyring/       └ SSH key unlocked at login, like the Keychain
+extras/
+  net-badge/         network latency in the menu bar
+lib/common.sh        helpers shared by the installers
+```
+
+| Part | What it does |
 |---|---|
-| [macos-xfce](#macos-xfce) | The macOS look and feel for Mint Xfce: Cmd-key shortcuts, menu bar with a global menu, dock, Spotlight, Launchpad, Mission Control, Spaces with the slide, Cmd+Tab, screenshots, macOS cursors. Installs the utilities below. |
+| [macos-xfce](#macos-xfce) | The macOS look and feel for Mint Xfce: Cmd-key shortcuts, menu bar with a global menu, dock, Spotlight, Launchpad, Mission Control, Spaces with the slide, Cmd+Tab, screenshots, macOS cursors, and the parts below. |
 | [hotcorner](#hotcorner) | Hot corners: top right shows the desktop, bottom right opens Mission Control. A tiny C program. |
 | [desktop-slide](#desktop-slide) | The macOS slide when you switch desktops (Spaces) with Ctrl+arrows or a 3-finger swipe. |
 | [volume-feedback](#volume-feedback) | The click when you change the volume. |
 | [disk-label](#disk-label) | A "Macintosh HD / 91 GB free" icon on the desktop, with live free space. |
 | [auto-brightness](#auto-brightness) | Screen and keyboard backlight follow the room light, like a MacBook (needs its light sensor). |
+| [ssh-keyring](#ssh-keyring) | Unlocks your SSH key at login from the login keyring, like the macOS Keychain (only when you have a key). |
 | **Extras** | |
 | [net-badge](#net-badge) | Network latency in the menu bar ("● 24 ms"), with a popover. |
-| [ssh-keyring](#ssh-keyring) | Unlocks your SSH key at login from the login keyring, like the macOS Keychain. |
 
 Tested on Linux Mint 22.3 Xfce (X11) on a MacBook Air mid 2012 (Intel HD 4000, 8 GB).
 Nothing is tied to that machine: Mac-only parts (fan control, light sensor, Apple trackpad
@@ -42,7 +57,8 @@ Options, all off by default:
 ./macos-xfce/install.sh --user           # skip packages (already installed): no sudo
 ```
 
-One utility on its own: `./<utility>/install.sh`, for example `./net-badge/install.sh`.
+One part on its own: its `install.sh`, for example `./macos-xfce/hotcorner/install.sh` or
+`./extras/net-badge/install.sh`.
 
 Everything is safe to re-run: each step checks before it changes anything. Programs go in
 `~/.local/bin`, settings in your Xfce settings and `~/.config`. Where a file is shared with other
@@ -202,6 +218,23 @@ Installs only where there is a light sensor.
 
 ---
 
+## ssh-keyring
+
+On macOS the Keychain unlocks your SSH key when you log in. This does the same with the login
+keyring: the passphrase is stored there once, and at login `ssh-keyring unlock` adds the key to
+the session's ssh-agent. The key file stays encrypted on disk, and the passphrase never appears
+on a command line.
+
+```
+./macos-xfce/ssh-keyring/install.sh [KEY]   # default ~/.ssh/id_ed25519
+ssh-keyring store                  # once: type the passphrase; it's checked, then saved
+ssh-keyring forget                 # remove it from the keyring
+```
+
+---
+
+# Extras
+
 ## net-badge
 
 A coloured dot and the current latency in the menu bar, measured every 5 seconds as one TCP
@@ -212,19 +245,6 @@ last 3 minutes and min/avg/max; a notification appears when the connection turns
 Xfce's Generic Monitor plugin, so there's no extra process between measurements.
 
 ---
-
-## ssh-keyring
-
-On macOS the Keychain unlocks your SSH key when you log in. This does the same with the login
-keyring: the passphrase is stored there once, and at login `ssh-keyring unlock` adds the key to
-the session's ssh-agent. The key file stays encrypted on disk, and the passphrase never appears
-on a command line.
-
-```
-./ssh-keyring/install.sh [KEY]     # default ~/.ssh/id_ed25519
-ssh-keyring store                  # once: type the passphrase; it's checked, then saved
-ssh-keyring forget                 # remove it from the keyring
-```
 
 ## License
 

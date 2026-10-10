@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$HERE/../lib/common.sh"
+. "$HERE/../../lib/common.sh"
 require_xfce
 mapfile -t pkgs < <(packages_of "$HERE"); ensure_packages "${pkgs[@]}"
 # disk-label: a "Macintosh HD / 91 GB free" icon on the desktop.
