@@ -1,11 +1,48 @@
 # xfce-macos
 
-Make **Linux Mint Xfce** feel like **macOS**, with as little CPU and memory as possible: every part is
-built with performance and a low footprint in mind (see [Light by design](#macos-xfce)). It's
-for old Macs and low-end laptops, where macOS no longer updates or a heavy desktop no longer
-fits. The goal is that someone coming from a Mac doesn't have to relearn anything: the same
-shortcuts, gestures, menu bar, dock, Mission Control, hot corners, and settings with the same
-names, where a Mac user would look for them.
+**Make Xfce on Linux Mint feel like macOS, as lightly as possible.**
+
+<p align="center">
+  <img src="docs/images/hero.png" alt="Xfce with a macOS-style menu bar, window buttons on the left, and a magnifying Dock" width="900">
+</p>
+
+For old Macs and low-end laptops, where macOS no longer updates or a heavy desktop no longer fits. The
+goal is that someone coming from a Mac doesn't have to relearn anything: the same shortcuts, gestures,
+menu bar, Dock, Mission Control, hot corners, and settings with the same names, where a Mac user would
+look for them. Every part is built with performance and a low footprint in mind (see
+[Light by design](#macos-xfce)).
+
+**What you get**
+
+- **Cmd-key shortcuts** (Cmd+C/V/T/W/Q, Cmd+Tab, Cmd+Space, Cmd+Shift+3/4/5) through [Toshy](https://github.com/RedBearAK/toshy)
+- **A menu bar** with a global menu and the macOS order of status icons, and **window buttons on the left**
+- **A Dock** with magnification, in the WhiteSur theme, and macOS cursors and fonts
+- **Mission Control**: a Spaces bar of all your desktops with their pictures, the current desktop's windows
+  below; drag windows between desktops, add and reorder desktops
+- **Full screen like macOS**: the green button and Cmd+Ctrl+F; the app gets a Space of its own, and the
+  menu bar, title bar and Dock come back at the screen edges
+- **Hot corners** (set on the Desktop & Dock page), a **slide** between desktops, 3-finger swipes
+- **Settings pages named like macOS's System Settings**, in their own section of Xfce's Settings Manager
+- **Spotlight and Launchpad** (Cmd+Space, F4), screenshots, the volume click, automatic brightness on Macs
+- **A setup window** and a full **restore**, so you can undo it
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/mission-control.png" alt="Mission Control: the Spaces bar with desktop pictures and the current desktop's windows"><br><sub><b>Mission Control.</b> Every desktop with its picture on top, the current desktop's windows below.</sub></td>
+    <td width="50%"><img src="docs/images/fullscreen-menubar.png" alt="A full-screen app with the menu bar and the red, yellow and green title bar at the top edge"><br><sub><b>Full screen.</b> Rest the pointer at the top: menu bar and title bar, with the green button to leave.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/fullscreen-dock.png" alt="The Dock appearing over a full-screen app"><br><sub><b>The Dock</b> over a full-screen app, at the bottom edge.</sub></td>
+    <td><img src="docs/images/settings-manager.png" alt="Xfce's Settings Manager with an xfce-macos section at the top"><br><sub><b>Settings Manager</b> with a section of its own for the macOS-style pages.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/settings-dock.png" alt="The Desktop and Dock settings page with Hot Corners"><br><sub><b>Desktop &amp; Dock</b>, with the Hot Corners on the page.</sub></td>
+    <td><img src="docs/images/setup-app.png" alt="The setup window with install and restore buttons and a log"><br><sub><b>The setup window.</b> Install, update or restore, with a log of what it does.</sub></td>
+  </tr>
+</table>
+
+<sub>The pictures are taken from a neutral demo scene by [`docs/screenshots.sh`](docs/screenshots.sh), on a private
+invisible display, so you can re-take them after a change; nothing personal is in them.</sub>
 
 `macos-xfce/` is the whole thing: one installer sets up everything macOS does. Each part lives in
 its own folder inside it and can also be installed alone. Small tools that aren't about the macOS
@@ -24,6 +61,7 @@ macos-xfce/          the core: ./macos-xfce/install.sh sets up all of it
   settings/          ├ macOS-style settings pages in Xfce's Settings Manager
   setup-app/         └ a small window to install, update or restore
 lib/common.sh        helpers shared by the installers
+docs/                the screenshots and the script that takes them
 ```
 
 | Part | What it does |
@@ -37,10 +75,11 @@ lib/common.sh        helpers shared by the installers
 | [mission-control](#mission-control) | Mission Control: every desktop in a Spaces bar on top, the current desktop's windows below; drag windows between desktops, + and × to add and remove desktops. |
 | [settings](#settings) | Settings Manager pages named like macOS's System Settings: **Desktop & Dock** (Dock size, magnification, position, auto-hide, **Hot Corners**, sliding between desktops), **Trackpad**, **Displays** and **Keyboard Brightness** (automatic brightness). |
 | [fullscreen](#fullscreen) | Full screen like macOS: the green button and Cmd+Ctrl+F go full screen in a Space of its own; at the top edge the menu bar and title bar slide in. |
+| [setup-app](#setup-app) | A small window to install, update or restore, with a log of what it does. |
 
-Tested on Linux Mint 22.3 Xfce (X11) on a MacBook Air mid 2012 (Intel HD 4000, 8 GB).
-Nothing is tied to that machine: Mac-only parts (fan control, light sensor, Apple trackpad
-thresholds) switch themselves on only where the hardware is there.
+Tested on Linux Mint 22.3 Xfce (X11) on a MacBook Air mid 2012 (Intel HD 4000, 8 GB). Nothing is tied to
+that machine: Mac-only parts (fan control, light sensor, Apple trackpad thresholds) switch themselves on
+only where the hardware is there. See [Hardware notes](#hardware-notes) for what to expect elsewhere.
 
 ## Install
 
@@ -62,13 +101,38 @@ Options, all off by default:
 ./macos-xfce/install.sh --list-changes   # show what they changed
 ```
 
-One part on its own: its `install.sh`, for example `./macos-xfce/hotcorner/install.sh` or
-its `install.sh`.
+One part on its own: its `install.sh`, for example `./macos-xfce/hotcorner/install.sh`.
 
 Everything is safe to re-run: each step checks before it changes anything. Programs go in
 `~/.local/bin`, settings in your Xfce settings and `~/.config`. Where a file is shared with other
 tools (`gtk.css`, `~/.xsessionrc`, Firefox's `user.js`, Toshy's config), the change sits in a
 block marked `xfce-macos` that a re-run replaces instead of duplicating.
+
+## Hardware notes
+
+Developed and tested only on a **MacBook Air mid 2012** (Intel HD 4000, 8 GB, Broadcom Wi-Fi) running
+**Linux Mint 22.3 Xfce on X11**. Everything below about other machines is expectation, not something
+that has been tested.
+
+- **Which machines.** Intel Macs up to about 2017 should work as they are: nothing in the setup is specific
+  to the Air. Macs from 2018 to 2020 with the T2 chip need the [t2linux](https://wiki.t2linux.org) kernel
+  and drivers first, which are not covered here. Apple silicon Macs are not supported by this installer
+  (it targets x86 Linux Mint). Any PC laptop with Xfce on X11 can use it: the Mac-only parts (fan control,
+  the ambient light sensor, trackpad thresholds) switch themselves on only where the hardware exists.
+- **Wi-Fi.** Many Macs use a Broadcom Wi-Fi chip that needs a proprietary driver. On a Mac with a matching
+  Broadcom card the installer adds `broadcom-sta-dkms`, but it needs a network connection to download it:
+  **install Linux Mint over a cable or USB tethering first**, then run the installer.
+- **Nvidia graphics (MacBook Pros from about 2008 to 2014).** Use the open-source `nouveau` driver that Mint
+  installs, and avoid the old proprietary legacy drivers, which are unmaintained. The desktop slide uses
+  picom's OpenGL backend, which has not been tried on Nvidia here.
+- **The FaceTime camera** needs a separate driver (`facetimehd`) that this does not install; it is
+  reported to prevent sleep while loaded.
+- **Disk encryption** is chosen in Mint's own installer and is not affected.
+- **Fn and Control** are not swapped, on purpose: an Apple keyboard already has Fn at the bottom left, the
+  macOS layout.
+- **X11 only.** These helpers watch windows and the pointer, which Wayland does not allow, so Xfce on
+  Wayland is not supported.
+- **Linux Mint 22.x Xfce** is what the installer targets today. Xubuntu support is planned, not done.
 
 ## Footprint
 

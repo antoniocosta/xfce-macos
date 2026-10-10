@@ -88,6 +88,8 @@ static long clicked_at;
 static Window bar = None;            /* the title bar shown at the top edge */
 static Window dock_helper = None;    /* takes the focus while the dock is up over a full-screen app */
 static Window dock_for = None;       /* that app */
+static long shown_at;                /* when the bar or the dock went up (focus takes a moment to move) */
+#define FOCUS_GRACE_MS 600           /* a slow machine needs a while to hand over the focus */
 static Window bar_for = None;        /* the full-screen window it belongs to */
 static int bar_x, bar_y, bar_w;
 static Window marked[MAX_CLIENTS];   /* windows carrying a desktop-slide mark */
@@ -518,8 +520,13 @@ static void show_bar(Window w) {
     for (int i = 0; MENU_PROPS[i]; i++) copy_prop(w, bar, XInternAtom(dpy, MENU_PROPS[i], False));
     copy_prop(w, bar, XA_WM_CLASS);                              /* the app's name in the menu bar */
     XMoveResizeWindow(dpy, bar, bar_x, bar_y, bar_w, BAR_H);
+    long here = get_card(root, A_CURDESK, 0);        /* on the desktop it is shown on, whatever xfwm4 thinks */
+    XChangeProperty(dpy, bar, A_DESK, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&here, 1);
     XMapRaised(dpy, bar);
     XSync(dpy, False);
+    move_to_desktop(bar, here);
+    XSync(dpy, False);
+    shown_at = now_ms();
     activate(bar);              /* the app loses the focus, so the panel shows above it */
     draw_bar();
 }
@@ -551,8 +558,13 @@ static void show_dock(Window w) {
     for (int i = 0; MENU_PROPS[i]; i++) copy_prop(w, dock_helper, XInternAtom(dpy, MENU_PROPS[i], False));
     copy_prop(w, dock_helper, XA_WM_CLASS);                     /* the menu bar stays the app's */
     dock_for = w;
+    long here = get_card(root, A_CURDESK, 0);
+    XChangeProperty(dpy, dock_helper, A_DESK, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&here, 1);
     XMapRaised(dpy, dock_helper);
     XSync(dpy, False);
+    move_to_desktop(dock_helper, here);
+    XSync(dpy, False);
+    shown_at = now_ms();
     activate(dock_helper);      /* the app loses the focus, so the dock shows above it */
 }
 
@@ -667,7 +679,7 @@ int main(int argc, char **argv) {
                 long t = now_ms();
                 int held = (mask & (Button1Mask | Button2Mask | Button3Mask)) != 0;
                 if (dock_for != None) {                          /* the dock is up */
-                    if (act != dock_helper) { hide_dock(0); away_since = -1; }   /* something took over */
+                    if (act != dock_helper && t - shown_at > FOCUS_GRACE_MS) { hide_dock(0); away_since = -1; }   /* something took over */
                     else if (!has_state(dock_for, A_FULL)) { hide_dock(0); away_since = -1; }
                     else if (py < SH - DOCK_ZONE && !held) {
                         if (away_since < 0) away_since = t;
@@ -684,7 +696,7 @@ int main(int argc, char **argv) {
                 } else if (bar_for != None) {
                     int away = py > bar_y + BAR_H + 8 || px < bar_x || px >= bar_x + bar_w;
                     if (!has_state(bar_for, A_FULL)) hide_bar(0);
-                    else if (act != bar && act != bar_for) hide_bar(0);   /* something else took over */
+                    else if (act != bar && act != bar_for && t - shown_at > FOCUS_GRACE_MS) hide_bar(0);   /* something else took over */
                     else if (away && !menu_open()) hide_bar(1);
                 } else if (py <= 0 && !(mask & (Button1Mask | Button2Mask | Button3Mask))) {
                     if (at_top_since < 0) at_top_since = t;
