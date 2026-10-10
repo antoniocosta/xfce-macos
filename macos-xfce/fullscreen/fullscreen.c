@@ -21,8 +21,9 @@
  * app's), which lets the panel show above the window, and gives the focus back when it hides.
  * The full-screen window is alone on its Space, so nothing else can come up in between.
  *
- * Desktops are only ever added after the last one and removed from the end when empty, never
- * renumbered: renumbering desktops under a window that is being dragged is what breaks.
+ * The Space is inserted right after the window's own desktop, as on macOS, so the desktops after
+ * it move up one (and back down when it goes). That never happens while a mouse button is held:
+ * renumbering desktops under a window that is being dragged is what breaks things.
  *
  * Usage: fullscreen [-G] [-P] [-S]   -G: leave the green button alone; -P: no menu/title bar
  *                                    at the top edge; -S: full-screen windows stay on their desktop
@@ -53,6 +54,7 @@ struct client {
     Window w;
     int maxed, full;
     int origin;             /* the desktop it came from, while it has a Space of its own; else -1 */
+    int space;              /* the Space's desktop number, while it has one; else -1 */
     int geo[5];             /* frame x, y, width, height, title bar height */
 };
 
@@ -166,9 +168,11 @@ static void update_geo(struct client *c) {
 
 /* ---- Spaces ------------------------------------------------------------------------------ */
 
-/* the number of desktops before any full-screen Space was added; kept in a file so a restart
- * (or a new login) still knows which trailing desktops are Spaces */
+/* The number of ordinary desktops (without full-screen Spaces), kept in a file so a restart or a
+ * new login still knows how many desktops are Spaces. */
 static char base_file[512];
+static long pending[16];             /* Spaces (desktop numbers) to remove once they are empty */
+static int npending;
 
 static long read_base(void) {
     FILE *f = fopen(base_file, "r"); long b = -1;
@@ -182,24 +186,62 @@ static void write_base(long b) {
     if (f) { fprintf(f, "%ld\n", b); fclose(f); }
 }
 
+static long desk_of(Window w) { return get_card(w, A_DESK, -1); }
+
 static int desktop_empty(long d) {
-    for (int i = 0; i < ncl; i++) if (get_card(cl[i].w, A_DESK, -1) == d) return 0;
+    for (int i = 0; i < ncl; i++) if (desk_of(cl[i].w) == d) return 0;
     return 1;
 }
 
-/* remove empty Spaces from the end, never below the original number of desktops */
+static int button_held(void) {      /* never renumber desktops while something may be dragged */
+    Window r, c; int x, y, wx, wy; unsigned int mask = 0;
+    XQueryPointer(dpy, root, &r, &c, &x, &y, &wx, &wy, &mask);
+    return (mask & (Button1Mask | Button2Mask | Button3Mask)) != 0;
+}
+
+static void set_origin(struct client *c, long o) {
+    c->origin = (int)o;
+    if (o < 0) XDeleteProperty(dpy, c->w, A_ORIGIN);
+    else XChangeProperty(dpy, c->w, A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&o, 1);
+}
+
+/* desktop numbers from `from` on move by `by` (+1: a Space was inserted, -1: one was removed) */
+static void renumber(long from, int by, Window except) {
+    for (int i = 0; i < ncl; i++) {
+        struct client *c = &cl[i];
+        long d = desk_of(c->w);
+        if (c->w != except && d >= from && d != 0xFFFFFFFF) move_to_desktop(c->w, d + by);
+        if (c->origin >= from) set_origin(c, c->origin + by);
+        if (c->space >= from) c->space += by;
+    }
+    for (int i = 0; i < npending; i++) if (pending[i] >= from) pending[i] += by;
+}
+
+/* remove the Spaces that were left (once empty), never an ordinary desktop */
 static void trim_spaces(void) {
+    if (button_held()) { trim_at = now_ms() + SLIDE_CLEAR_MS; return; }
     long base = read_base();
-    if (base < 1) return;
-    long n = get_card(root, A_NDESK, 0), cur = get_card(root, A_CURDESK, 0), keep = n;
-    while (keep > base && keep - 1 != cur && desktop_empty(keep - 1)) keep--;
-    if (keep != n) set_desktops(keep);
-    if (keep <= base) write_base(-1);
+    for (int k = 0; k < npending; k++) {
+        long s = pending[k], n = get_card(root, A_NDESK, 0), cur = get_card(root, A_CURDESK, 0);
+        if (base >= 0 && n <= base) { npending = 0; break; }
+        if (s < 0 || s >= n || s == cur || !desktop_empty(s)) continue;
+        if (cur > s) switch_desktop(cur - 1);              /* stay on the same windows */
+        pending[k] = -1;
+        renumber(s + 1, -1, None);
+        XSync(dpy, False);
+        set_desktops(n - 1);
+        XSync(dpy, False);
+    }
+    int j = 0;
+    for (int k = 0; k < npending; k++) if (pending[k] >= 0) pending[j++] = pending[k];
+    npending = j;
+    long n = get_card(root, A_NDESK, 0);
+    if (base >= 0 && n <= base) write_base(-1);
 }
 
 static void mark_slide(long desk, const char *dir) {   /* the desktop-slide marks (picom) */
     for (int i = 0; i < ncl && nmarked < MAX_CLIENTS; i++) {
-        if (get_card(cl[i].w, A_DESK, -1) != desk) continue;
+        if (desk_of(cl[i].w) != desk) continue;
         XChangeProperty(dpy, cl[i].w, A_SLIDE, XA_STRING, 8, PropModeReplace,
                         (const unsigned char *)dir, strlen(dir));
         marked[nmarked++] = cl[i].w;
@@ -212,26 +254,30 @@ static void clear_marks(void) {
     nmarked = 0;
 }
 
+/* full screen: a new Space right after the window's desktop, like macOS */
 static void enter_space(struct client *c) {
-    long origin = get_card(c->w, A_DESK, -1);
+    long origin = desk_of(c->w);
     if (origin < 0 || origin == 0xFFFFFFFF) return;              /* sticky: stays where it is */
-    long n = get_card(root, A_NDESK, 1);
+    long n = get_card(root, A_NDESK, 1), s = origin + 1;
     if (read_base() < 0) write_base(n);
     set_desktops(n + 1);
+    XSync(dpy, False);
+    renumber(s, +1, c->w);                                       /* later desktops move up one */
     mark_slide(origin, "fwd");
     XDeleteProperty(dpy, c->w, A_SLIDE);                         /* it appears, not slides */
     XSync(dpy, False);
-    switch_desktop(n);
-    move_to_desktop(c->w, n);
+    switch_desktop(s);
+    move_to_desktop(c->w, s);
     activate(c->w);
-    c->origin = (int)origin;
-    XChangeProperty(dpy, c->w, A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&origin, 1);
+    set_origin(c, origin);
+    c->space = (int)s;
 }
 
+/* leaving full screen (or closed): back to its own desktop; the Space goes once it is empty */
 static void leave_space(struct client *c, int gone) {
-    long origin = c->origin, cur = get_card(root, A_CURDESK, 0);
-    c->origin = -1;
-    if (!gone) XDeleteProperty(dpy, c->w, A_ORIGIN);
+    long origin = c->origin, s = c->space, cur = get_card(root, A_CURDESK, 0);
+    if (gone) c->origin = -1; else set_origin(c, -1);
+    c->space = -1;
     if (!gone) move_to_desktop(c->w, origin);
     if (cur != origin) {
         mark_slide(origin, "back");
@@ -239,6 +285,8 @@ static void leave_space(struct client *c, int gone) {
         switch_desktop(origin);
         if (!gone) activate(c->w);
     }
+    if (s >= 0 && npending < 16) pending[npending++] = s;
+    trim_at = now_ms() + SLIDE_CLEAR_MS;
     XSync(dpy, False);
 }
 
@@ -258,10 +306,12 @@ static void refresh_clients(void) {
             keep[k].maxed = is_maxed(list[i]);
             keep[k].full = has_state(list[i], A_FULL);
             keep[k].origin = (int)get_card(list[i], A_ORIGIN, -1);   /* kept on the window across restarts */
+            keep[k].space = keep[k].origin >= 0 ? (int)desk_of(list[i]) : -1;
             if (keep[k].origin >= 0 && !keep[k].full) {          /* left full screen while we were away */
+                if (npending < 16) pending[npending++] = keep[k].space;
                 move_to_desktop(list[i], keep[k].origin);
                 XDeleteProperty(dpy, list[i], A_ORIGIN);
-                keep[k].origin = -1;
+                keep[k].origin = keep[k].space = -1;
             }
         }
         update_geo(&keep[k]);
@@ -271,12 +321,12 @@ static void refresh_clients(void) {
     for (int i = 0; i < ncl; i++) {                              /* closed while full screen */
         int still = 0;
         for (int j = 0; j < k; j++) if (keep[j].w == cl[i].w) still = 1;
-        if (!still && cl[i].origin >= 0) { leave_space(&cl[i], 1); left = 1; }
+        if (!still && cl[i].origin >= 0) { leave_space(&cl[i], 1); left = 1; }   /* closed while full screen */
         if (!still && cl[i].w == bar_for) bar_for = None;
     }
     memcpy(cl, keep, sizeof(struct client) * k);
     ncl = k;
-    if (left) trim_at = now_ms() + SLIDE_CLEAR_MS;
+    (void)left;
 }
 
 /* a left-button press: remember the window if it landed in its button area */
@@ -310,7 +360,7 @@ static void on_state(Window w) {
     if (f != c->full) {
         c->full = f;
         if (spaces && f && c->origin < 0) enter_space(c);
-        else if (!f && c->origin >= 0) { leave_space(c, 0); trim_at = now_ms() + SLIDE_CLEAR_MS; }
+        else if (!f && c->origin >= 0) leave_space(c, 0);
     }
 }
 
@@ -478,7 +528,17 @@ int main(int argc, char **argv) {
     }
     XSelectInput(dpy, root, PropertyChangeMask);
     refresh_clients();
-    trim_spaces();                      /* Spaces left over from a previous session, now empty */
+    {   /* Spaces left over from a previous session: there are more desktops than the ordinary
+         * ones plus the Spaces of windows still full screen. Only empty desktops at the end are
+         * taken for leftovers: an empty ordinary desktop in between must stay. */
+        long base = read_base(), n = get_card(root, A_NDESK, 0), live = 0;
+        for (int i = 0; i < ncl; i++) if (cl[i].origin >= 0) live++;
+        long extra = base >= 0 ? n - base - live : 0;
+        for (long d = n - 1; extra > 0 && d >= 0 && desktop_empty(d) && npending < 16; d--, extra--)
+            pending[npending++] = d;
+        if (base >= 0 && n - live <= base && !live) write_base(-1);
+        trim_spaces();
+    }
 
     long at_top_since = -1;
     for (;;) {
@@ -532,9 +592,9 @@ int main(int argc, char **argv) {
                 struct client *c = find(e.xconfigure.window);
                 if (c) update_geo(c);
             } else if (e.type == PropertyNotify) {
-                if ((e.xproperty.window == root && e.xproperty.atom == A_CURDESK) || e.xproperty.atom == A_DESK)
-                    trim_at = now_ms() + SLIDE_CLEAR_MS;                 /* a desktop may have emptied */
-                if (e.xproperty.window == root && e.xproperty.atom == A_CLIENTS) { refresh_clients(); trim_at = now_ms() + SLIDE_CLEAR_MS; }
+                if (npending && ((e.xproperty.window == root && e.xproperty.atom == A_CURDESK) || e.xproperty.atom == A_DESK))
+                    trim_at = now_ms() + SLIDE_CLEAR_MS;                 /* a Space may have emptied */
+                if (e.xproperty.window == root && e.xproperty.atom == A_CLIENTS) refresh_clients();
                 else if (e.xproperty.atom == A_STATE) on_state(e.xproperty.window);
                 else if (e.xproperty.atom == A_EXTENTS) { struct client *c = find(e.xproperty.window); if (c) update_geo(c); }
             } else if (e.type == Expose && e.xexpose.window == bar && e.xexpose.count == 0) {

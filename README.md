@@ -251,7 +251,7 @@ macOS full screen, for every app:
 - **The green button goes full screen** instead of maximizing, for Xfce's title bars and for apps
   that draw their own (Firefox). **Cmd+Ctrl+F** toggles it too, and apps' own full screen (F11,
   a video's full-screen button) behaves the same.
-- **Its own Space.** The window moves to a new desktop after the last one and the screen slides
+- **Its own Space.** The window moves to a new desktop right after its own, and the screen slides
   to it; Ctrl+arrows, the swipes and Mission Control reach it like any desktop. Leaving full
   screen (or closing the window) slides back to the window's own desktop and removes the Space.
 - **The top edge.** Rest the pointer at the top: the menu bar slides in, with the app's own
@@ -261,9 +261,10 @@ macOS full screen, for every app:
 How it stays light: one small C program that sleeps until a window changes. Clicks come in as
 XInput2 raw events (no grab, nothing taken from other apps); a click in a window's button area
 followed by that window's maximize state changing is the green button. The pointer is only
-watched while the active window is full screen. Desktops are only added after the last one and
-removed from the end when empty, never renumbered (renumbering desktops under a window that's
-being dragged is what breaks things).
+watched while the active window is full screen. Inserting the Space moves the later desktops up
+one (and back when it goes), but never while a mouse button is held: renumbering desktops under
+a window that's being dragged is what breaks things. Each window keeps its own desktop number
+on itself, so a restart of the program never strands it.
 
 Xfce keeps a focused full-screen window above the panel, so while the title bar shows, it takes
 the focus (carrying the app's menu properties, so the global menu stays the app's); the window
