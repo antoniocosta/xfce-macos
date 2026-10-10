@@ -259,6 +259,8 @@ windows of the desktop that app came from (and goes back to the app if you pick 
 - **+** adds a desktop; the **×** on a hovered desktop removes it (its windows move to the
   neighbouring desktop; on a full-screen Space it leaves full screen).
 - Drag a desktop along the Spaces bar to reorder the desktops; their windows go with them.
+- Up to 16 desktops, full-screen Spaces included, as on macOS (the **+** goes away at 16; an app
+  going full screen then stays on its own desktop).
 
 How it stays light: one small C program that sleeps in the background (about 2 MB of its own).
 X keeps no picture of hidden desktops, so when the window manager reports a change on the current

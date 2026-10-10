@@ -40,6 +40,7 @@
 
 #define MAX_WIN 256
 #define MAX_DESK 32
+#define MAX_SPACES 16       /* macOS allows 16 Spaces per display */
 #define THUMB_H 84          /* desktop thumbnails in the Spaces bar */
 #define BAR_TOP 22
 #define LABEL_H 28
@@ -478,6 +479,7 @@ static void layout_desks(void) {
         x += (tw + GAP) * s;
     }
     plus_x = x; plus_y = BAR_TOP + (th - pw) * s / 2; plus_w = pw * s; plus_h = pw * s;
+    if (n >= MAX_SPACES) plus_w = plus_h = 0;            /* at the limit: no + */
 }
 
 static int by_position(const void *a, const void *b) {   /* top to bottom, then left to right */
@@ -670,6 +672,7 @@ static void draw(void) {
     cairo_set_source_rgba(cr, 0, 0, 0, 0.25);
     cairo_fill(cr);
     draw_desks(cr);
+    if (plus_w > 0) {
     rounded(cr, plus_x, plus_y, plus_w, plus_h, 8);      /* + */
     cairo_set_source_rgba(cr, 1, 1, 1, hover_plus ? (dragging ? 0.45 : 0.30) : 0.15);
     cairo_fill(cr);
@@ -679,6 +682,7 @@ static void draw(void) {
     cairo_move_to(cr, pcx - ps, pcy); cairo_line_to(cr, pcx + ps, pcy);
     cairo_move_to(cr, pcx, pcy - ps); cairo_line_to(cr, pcx, pcy + ps);
     cairo_stroke(cr);
+    }
 
     for (int k = 0; k < nitems; k++) {                   /* the current desktop's windows */
         struct win *v = &wins[cur_items[k]];
@@ -739,7 +743,7 @@ static void draw(void) {
 
 static void update_hover(int x, int y) {
     hover_item = -1; hover_desk = -1; hover_close = 0;
-    hover_plus = x >= plus_x && x < plus_x + plus_w && y >= plus_y - 20 && y < plus_y + plus_h + 20;
+    hover_plus = plus_w > 0 && x >= plus_x && x < plus_x + plus_w && y >= plus_y - 20 && y < plus_y + plus_h + 20;
     for (int d = 0; d < ndesk; d++) {
         struct desk *k = &desks[d];
         if (x >= k->x - 10 && x < k->x + k->w && y >= k->y - 10 && y < k->y + k->h + LABEL_H) {
@@ -843,7 +847,7 @@ static void refresh(void) {
 
 static void add_desktop(Window carry) {
     long n = get_card(root, A_NDESK, 1);
-    if (n >= MAX_DESK) return;
+    if (n >= MAX_SPACES) return;
     set_desktops(n + 1);
     adjust_base(+1);
     XSync(dpy, False);

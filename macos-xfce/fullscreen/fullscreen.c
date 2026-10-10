@@ -47,6 +47,7 @@
 #include <time.h>
 
 #define MAX_CLIENTS 512
+#define MAX_SPACES 16       /* macOS allows 16 Spaces per display, full-screen ones included */
 #define BUTTON_ZONE_W 110   /* the window buttons sit in this many pixels from the left... */
 #define CSD_TITLE_H 48      /* ...and, for apps that draw their own title bar, this far down */
 #define CLICK_WINDOW_MS 1000
@@ -267,6 +268,7 @@ static void enter_space(struct client *c) {
     long origin = desk_of(c->w);
     if (origin < 0 || origin == 0xFFFFFFFF) return;              /* sticky: stays where it is */
     long n = get_card(root, A_NDESK, 1), s = origin + 1;
+    if (n >= MAX_SPACES) return;     /* at macOS's limit of 16 Spaces: full screen where it is */
     if (read_base() < 0) write_base(n);
     set_desktops(n + 1);
     XSync(dpy, False);
