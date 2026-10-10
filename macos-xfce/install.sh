@@ -564,6 +564,9 @@ user_pref("media.hardware-video-decoding.force-enabled", true);'
 user_pref("mousewheel.default.delta_multiplier_x", 50);
 user_pref("mousewheel.default.delta_multiplier_y", 50);
 
+// Full screen keeps the tabs and toolbars (the whole browser goes full screen, as on macOS)
+user_pref("browser.fullscreen.autohide", false);
+
 // Leaner on a small laptop: fewer tab processes (site isolation stays on)
 user_pref("dom.ipc.processCount", 4);
 // unload background tabs when memory runs low (they reload when clicked, like Safari)
