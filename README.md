@@ -75,7 +75,7 @@ Measured on the 2012 MacBook Air over a 12-hour session (resident memory, averag
 | Process | Memory | CPU |
 |---|---|---|
 | hotcorner | 3 MB | 0.01 % |
-| fullscreen | 4 MB | 0 (sleeps until a window changes; watches the pointer only in full screen) |
+| fullscreen | 9 MB | 0 (sleeps until a window changes; watches the pointer only in full screen) |
 | volume-feedback | 11 MB | 0 (sleeps until the volume changes) |
 | disk-label | 4 MB | 0 (checks once a minute) |
 | skippy-xd (Mission Control, waiting) | 11 MB | 0 |
@@ -116,6 +116,7 @@ The rules every part follows:
 | Cmd+Tab | app icons from every desktop, dark rounded panel | Xfce's switcher, styled in `files/gtk3-overrides.css` |
 | Ctrl+Tab / Ctrl+Shift+Tab | next / previous tab | Toshy keymap |
 | Ctrl+← / Ctrl+→ | previous / next desktop, with the slide | `desktop-switch` ([desktop-slide](#desktop-slide)) |
+| green button, Cmd+Ctrl+F | full screen in its own Space; menu bar and title bar at the top edge | [fullscreen](#fullscreen) |
 | Ctrl+↑, F3, bottom-right corner | Mission Control: every window of every desktop | [skippy-xd](https://github.com/felixfung/skippy-xd), built from a release |
 | F4 | Launchpad: full-screen app grid, type to filter | rofi, `files/.config/rofi/launchpad.rasi` |
 | Cmd+Space | Spotlight-style app search | rofi, `files/.config/rofi/config.rasi` |
@@ -130,9 +131,11 @@ The rules every part follows:
 | desktop | "Macintosh HD / 91 GB free", USB drives and servers in a column at the top right | xfdesktop + [disk-label](#disk-label) |
 | Firefox | trackpad scrolling slowed to macOS speed, leaner (4 content processes, tabs unloaded when memory runs low, no telemetry or sponsored content; site isolation kept), hardware video decoding where the GPU has it | Firefox `user.js` |
 
-Also: `mbpfan` (fan control) on Macs, `tlp` (battery life) on laptops, zram (compressed swap in
-RAM), the VA-API `i965` driver on older Intel GPUs, and the Update Manager shield shown only
-when there are updates.
+Also: notifications at the top right, without Wi-Fi "connected" pop-ups; menu bar status icons in
+a fixed order and one battery icon; window buttons on the left in apps that draw their own title
+bar too (Firefox, GTK4); `mbpfan` (fan control) and the Broadcom Wi-Fi driver on Macs, `tlp`
+(battery life) on laptops, zram (compressed swap in RAM), the VA-API `i965` driver on older Intel
+GPUs, and the Update Manager shield shown only when there are updates.
 
 ### Trim (`--trim`)
 

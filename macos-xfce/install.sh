@@ -58,6 +58,8 @@ setup_packages() {
         while read -r p; do pkgs+=("$p"); done < <(packages_of "$HERE/$d")
     done
     is_mac    && pkgs+=(mbpfan)                      # MacBook fan control
+    is_mac && lspci -nn 2>/dev/null | grep -qiE 'Network controller.*Broadcom.*(BCM43(1|2|3|5|6)|14e4:43)' \
+              && pkgs+=(broadcom-sta-dkms)           # MacBook Wi-Fi (the driver Mint's Driver Manager picks)
     is_laptop && pkgs+=(tlp)                         # battery life
     lspci 2>/dev/null | grep -qiE '(VGA|3D).*Intel' && pkgs+=(i965-va-driver)   # video decoding on older Intel GPUs
     if [[ ! -f /etc/apt/sources.list.d/zquestz.list ]]; then
@@ -281,11 +283,17 @@ setup_theme() {
     xfset xfwm4 /general/title_font       string "Inter Semi-Bold 10"
     xfset xfwm4 /general/title_alignment  string center
     xfset xfwm4 /general/button_layout    string "CHM|"     # close, minimize, maximize on the left
+    xfset xsettings /Gtk/DecorationLayout string "close,minimize,maximize:"   # the same for apps that draw
+                                                            # their own title bar (Firefox, GTK4 apps)
     xfset xfwm4 /general/show_dock_shadow bool   false
     # Firefox and GTK4 apps follow the desktop portal's dark/light preference, not the theme
     gsettings set org.x.apps.portal color-scheme 'prefer-dark'
     gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
     gsettings set org.gnome.desktop.interface gtk-theme 'WhiteSur-Dark-solid'
+    # GTK4/libadwaita apps read these instead of Xfce's settings
+    gsettings set org.gnome.desktop.interface cursor-theme 'macOS'
+    gsettings set org.gnome.desktop.interface icon-theme 'Mint-Y-Blue-macbattery'
+    gsettings set org.gnome.desktop.interface font-name 'Inter 10'
     ok "WhiteSur dark theme, macOS cursors, Inter font, Mint-Y icons (macOS battery), dark mode"
 }
 
@@ -389,6 +397,20 @@ setup_panel() {
         xfset xfce4-panel "/plugins/plugin-$systray/symbolic-icons" bool true
     fi
     [[ -n "$volume" ]] && xfset xfce4-panel "/plugins/plugin-$volume/show-notifications" bool true
+    if [[ -n "$systray" ]]; then
+        xfset xfce4-panel "/plugins/plugin-$systray/show-frame" bool false
+        # status icons in a fixed order, right to left as macOS adds them: power, Toshy status,
+        # Wi-Fi, updates (newer status icons), then Bluetooth and Toshy (older tray icons)
+        xfset_strings xfce4-panel "/plugins/plugin-$systray/known-items" "Toshy Tray Icon Undefined" blueman
+        xfset_strings xfce4-panel "/plugins/plugin-$systray/known-legacy-items" \
+            mintupdate.py "networkmanager applet" "toshy status indicator" xfce4-power-manager
+    fi
+    # one battery icon (the panel's), not a second one from the power manager
+    xfset xfce4-power-manager /xfce4-power-manager/show-tray-icon bool false
+    # notifications at the top right, like macOS; no "connected" or "networks available" pop-ups
+    xfset xfce4-notifyd /notify-location string top-right
+    gsettings set org.gnome.nm-applet disable-connected-notifications true 2>/dev/null || true
+    gsettings set org.gnome.nm-applet suppress-wireless-networks-available true 2>/dev/null || true
     gsettings set com.linuxmint.updates hide-systray true 2>/dev/null || true   # update shield only when there are updates
 
     # Global menu: loaded through GTK_MODULES at login. (Switching it on live through
@@ -430,6 +452,7 @@ setup_desktop_icons() {
     section "Desktop icons"
     local d=xfce4-desktop k
     # File System's own icon is replaced by disk-label's "Macintosh HD / 91 GB free"
+    xfset $d /desktop-icons/style int 2                     # file and drive icons on the desktop
     xfset $d /desktop-icons/file-icons/show-filesystem bool false
     for k in show-removable show-device-removable show-network-removable show-unknown-removable; do
         xfset $d "/desktop-icons/file-icons/$k" bool true

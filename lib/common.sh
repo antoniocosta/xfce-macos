@@ -60,6 +60,16 @@ xfset() {  # xfset CHANNEL PROPERTY TYPE VALUE  (creates the property when missi
     xfconf-query -c "$1" -p "$2" -n -t "$3" -s "$4"
 }
 
+xfset_strings() {  # xfset_strings CHANNEL PROPERTY VALUE...  (a string array, in this order)
+    local ch="$1" prop="$2"; shift 2
+    local want have v args=()
+    want="$(printf '%s\n' "$@")"
+    have="$(xfconf-query -c "$ch" -p "$prop" 2>/dev/null | tail -n +3)"
+    [[ "$have" == "$want" ]] && return 0
+    for v in "$@"; do args+=(-t string -s "$v"); done
+    xfconf-query -c "$ch" -p "$prop" -n --force-array "${args[@]}"
+}
+
 autostart_entry() {  # autostart_entry NAME COMMAND
     mkdir -p "$AUTOSTART"
     printf '[Desktop Entry]\nType=Application\nName=%s\nExec=%s\nX-GNOME-Autostart-enabled=true\n' "$1" "$2" \
