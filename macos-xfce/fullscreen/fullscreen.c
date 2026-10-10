@@ -19,6 +19,9 @@
  * positions are kept from move events, because a trackpad tap maximizes the window before the
  * press is handled. The pointer is only polled while the active window is full screen.
  *
+ * The Dock: at the bottom edge the same applies to the dock (Plank): a tiny helper window takes
+ * the focus while the dock is up, and gives it back when the pointer leaves it.
+ *
  * The menu bar: Xfce keeps a focused full-screen window above the panel. While the title bar is
  * shown it takes the focus (carrying the app's menu properties, so the global menu stays the
  * app's), which lets the panel show above the window, and gives the focus back when it hides.
@@ -79,6 +82,8 @@ static Window clicked = None;        /* window whose button area was pressed las
 static long clicked_at;
 
 static Window bar = None;            /* the title bar shown at the top edge */
+static Window dock_helper = None;    /* takes the focus while the dock is up over a full-screen app */
+static Window dock_for = None;       /* that app */
 static Window bar_for = None;        /* the full-screen window it belongs to */
 static int bar_x, bar_y, bar_w;
 static Window marked[MAX_CLIENTS];   /* windows carrying a desktop-slide mark */
@@ -324,7 +329,7 @@ static void refresh_clients(void) {
     Window fresh[MAX_CLIENTS];
     int k = 0, left = 0, nfresh = 0;
     for (unsigned long i = 0; list && i < n && k < MAX_CLIENTS; i++) {
-        if (list[i] == bar) continue;
+        if (list[i] == bar || list[i] == dock_helper) continue;
         struct client *old = find(list[i]);
         if (old) keep[k] = *old;
         else {                                                   /* new window: watch it */
@@ -485,6 +490,45 @@ static void show_bar(Window w) {
     draw_bar();
 }
 
+/* ---- the Dock at the bottom edge ---------------------------------------------------------- */
+
+#define DOCK_ZONE 140       /* the dock (with its magnified icons) fits in this many pixels */
+
+static void show_dock(Window w) {
+    if (dock_helper == None) {
+        XSetWindowAttributes at = {0};
+        dock_helper = XCreateWindow(dpy, root, 0, DisplayHeight(dpy, DefaultScreen(dpy)) - 1, 1, 1, 0,
+                                    CopyFromParent, InputOutput, CopyFromParent, 0, &at);
+        XStoreName(dpy, dock_helper, "fullscreen dock helper");
+        struct { unsigned long flags, functions, decorations; long input; unsigned long status; } motif = {2, 0, 0, 0, 0};
+        XChangeProperty(dpy, dock_helper, A_MOTIF, A_MOTIF, 32, PropModeReplace, (unsigned char *)&motif, 5);
+        Atom st[] = {A_SKIP_TB, A_SKIP_PG};
+        XChangeProperty(dpy, dock_helper, A_STATE, XA_ATOM, 32, PropModeReplace, (unsigned char *)st, 2);
+        long sticky = 0xFFFFFFFF;
+        XChangeProperty(dpy, dock_helper, A_DESK, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&sticky, 1);
+        XWMHints wmh = {.flags = InputHint, .input = True};
+        XSetWMHints(dpy, dock_helper, &wmh);
+        XSizeHints *sh = XAllocSizeHints();
+        sh->flags = PPosition | USPosition;
+        XSetWMNormalHints(dpy, dock_helper, sh);
+        XFree(sh);
+    }
+    for (int i = 0; MENU_PROPS[i]; i++) copy_prop(w, dock_helper, XInternAtom(dpy, MENU_PROPS[i], False));
+    copy_prop(w, dock_helper, XA_WM_CLASS);                     /* the menu bar stays the app's */
+    dock_for = w;
+    XMapRaised(dpy, dock_helper);
+    XSync(dpy, False);
+    activate(dock_helper);      /* the app loses the focus, so the dock shows above it */
+}
+
+static void hide_dock(int refocus) {
+    Window w = dock_for;
+    if (w == None) return;
+    dock_for = None;
+    XUnmapWindow(dpy, dock_helper);
+    if (refocus) activate(w);
+}
+
 static void hide_bar(int refocus) {
     Window w = bar_for;
     if (bar == None || w == None) return;
@@ -570,17 +614,34 @@ int main(int argc, char **argv) {
         trim_spaces();
     }
 
-    long at_top_since = -1;
+    long at_top_since = -1, at_bottom_since = -1, away_since = -1;
+    int SH = DisplayHeight(dpy, DefaultScreen(dpy));
     for (;;) {
-        /* poll the pointer only while the active window is full screen (or the bar is up) */
+        /* poll the pointer only while the active window is full screen (or a bar or the dock is up) */
         Window act = peek ? active_window() : None;
-        int full = act != None && act != bar && has_state(act, A_FULL);
+        int full = act != None && act != bar && act != dock_helper && has_state(act, A_FULL);
         int timeout = -1;
-        if (full || bar_for != None) {
+        if (full || bar_for != None || dock_for != None) {
             Window r, c; int px, py, wx, wy; unsigned int mask;
             if (XQueryPointer(dpy, root, &r, &c, &px, &py, &wx, &wy, &mask)) {
                 long t = now_ms();
-                if (bar_for != None) {
+                int held = (mask & (Button1Mask | Button2Mask | Button3Mask)) != 0;
+                if (dock_for != None) {                          /* the dock is up */
+                    if (act != dock_helper) { hide_dock(0); away_since = -1; }   /* something took over */
+                    else if (!has_state(dock_for, A_FULL)) { hide_dock(0); away_since = -1; }
+                    else if (py < SH - DOCK_ZONE && !held) {
+                        if (away_since < 0) away_since = t;
+                        if (t - away_since >= PEEK_DELAY_MS) { hide_dock(1); away_since = -1; }
+                    } else away_since = -1;
+                } else if (full && py >= SH - 1 && !held) {      /* the bottom edge: the dock */
+                    if (at_bottom_since < 0) at_bottom_since = t;
+                    if (t - at_bottom_since >= 100) { show_dock(act); at_bottom_since = -1; }
+                } else {
+                    at_bottom_since = -1;
+                }
+                if (dock_for != None) {
+                    timeout = POLL_NEAR_MS;
+                } else if (bar_for != None) {
                     int away = py > bar_y + BAR_H + 8 || px < bar_x || px >= bar_x + bar_w;
                     if (!has_state(bar_for, A_FULL)) hide_bar(0);
                     else if (act != bar && act != bar_for) hide_bar(0);   /* something else took over */
@@ -591,7 +652,8 @@ int main(int argc, char **argv) {
                 } else {
                     at_top_since = -1;
                 }
-                timeout = (py < bar_y + BAR_H + 10) ? POLL_NEAR_MS : POLL_FULL_MS;
+                if (dock_for == None)
+                    timeout = (py < bar_y + BAR_H + 10 || py > SH - 10) ? POLL_NEAR_MS : POLL_FULL_MS;
             }
         } else {
             at_top_since = -1;

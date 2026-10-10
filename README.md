@@ -292,6 +292,7 @@ macOS full screen, for every app:
 - **The top edge.** Rest the pointer at the top: the menu bar slides in, with the app's own
   menus, and the window's title bar below it. Red closes the window, green leaves full screen,
   yellow is greyed out (as on macOS). Move away and they hide again; an open menu keeps them.
+- **The bottom edge** brings up the Dock over the full-screen app, as on macOS.
 
 How it stays light: one small C program that sleeps until a window changes. Clicks come in as
 XInput2 raw events (no grab, nothing taken from other apps); a click in a window's button area
@@ -301,9 +302,10 @@ one (and back when it goes), but never while a mouse button is held: renumbering
 a window that's being dragged is what breaks things. Each window keeps its own desktop number
 on itself, so a restart of the program never strands it.
 
-Xfce keeps a focused full-screen window above the panel, so while the title bar shows, it takes
-the focus (carrying the app's menu properties, so the global menu stays the app's); the window
-is alone on its Space, so nothing else comes up in between.
+Xfce keeps a focused full-screen window above the panel and the dock, so while the title bar or
+the dock shows, a small window of ours takes the focus (carrying the app's menu properties, so
+the global menu stays the app's) and gives it back when the pointer leaves; the app is alone on
+its Space, so nothing else comes up in between.
 
 `fullscreen -G` leaves the green button alone, `-P` turns off the top edge, `-S` keeps
 full-screen windows on their own desktop (no Spaces).
