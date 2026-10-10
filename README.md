@@ -189,7 +189,8 @@ translations back.
 ## hotcorner
 
 Move the pointer into a corner and rest it there for a moment: top right shows the desktop (do
-it again to bring the windows back), bottom right opens Mission Control. It doesn't fire while a
+it again to bring the windows back; nothing happens in a full-screen app, as on macOS), bottom
+right opens Mission Control. It doesn't fire while a
 mouse button is held, so dragging a window into a corner does nothing.
 
 `hotcorner.c` asks X where the pointer is 5 times a second, and 50 times a second only while the

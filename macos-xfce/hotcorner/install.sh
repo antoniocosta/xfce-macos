@@ -7,7 +7,7 @@ mapfile -t pkgs < <(packages_of "$HERE"); ensure_packages "${pkgs[@]}"
 # hotcorner: macOS hot corners. Top right: show desktop; bottom right: Mission Control (skippy-xd,
 # set up by macos-xfce/). Change the corners in ~/.local/bin/hot-corners.
 build_c "$HERE/hotcorner.c" hotcorner
-install_bin "$HERE/hot-corners"
+install_bin "$HERE/hot-corners" "$HERE/show-desktop"
 autostart_entry "Hot Corners" "$BIN/hot-corners"
 (setsid "$BIN/hot-corners" >/dev/null 2>&1 &)   # replaces any running copy itself
 ok "Hot corners on (top right: show desktop, bottom right: Mission Control)"

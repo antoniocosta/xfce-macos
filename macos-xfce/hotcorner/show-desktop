@@ -1,0 +1,6 @@
+#!/bin/sh
+# show-desktop: show the desktop, or bring the windows back. Like macOS, it does nothing while
+# you're in a full-screen app: that app is its own Space, there's no desktop behind it to show.
+w=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | awk '{print $5}' | tr -d ,)
+[ -n "$w" ] && [ "$w" != 0x0 ] && xprop -id "$w" _NET_WM_STATE 2>/dev/null | grep -q _NET_WM_STATE_FULLSCREEN && exit 0
+if wmctrl -m | grep -q "mode: ON"; then wmctrl -k off; else wmctrl -k on; fi

@@ -6,7 +6,7 @@ for p in $(pgrep -u "$USER" -x hot-corners); do [ "$p" != $$ ] && kill "$p"; don
 pkill -u "$USER" -x hotcorner 2>/dev/null
 while true; do
   "$HOME/.local/bin/hotcorner" -d 100 \
-    tr 'if wmctrl -m | grep -q "mode: ON"; then wmctrl -k off; else wmctrl -k on; fi' \
+    tr "$HOME/.local/bin/show-desktop" \
     br "$HOME/.local/bin/mission-control"
   sleep 2
 done
