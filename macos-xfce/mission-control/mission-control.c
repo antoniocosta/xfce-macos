@@ -69,7 +69,8 @@ static cairo_surface_t *snap[MAX_DESK];     /* desktop pictures, TW x THUMB_H */
 static long snap_due = -1, snap_desk = -1;
 
 static int is_open;
-static cairo_surface_t *bg;                 /* the desktop's wallpaper, while open */
+static cairo_surface_t *bg;                 /* the desktop's wallpaper (server side), while open */
+static Pixmap bg_pm = None;
 static struct win wins[MAX_WIN];
 static int nwins;
 static int cur_items[MAX_WIN], nitems;      /* indexes into wins[] of the current desktop's windows */
@@ -289,10 +290,22 @@ static void drop_snapshots(void) {   /* desktops were renumbered: pictures no lo
 static int wallpaper_path(long d, char *out, size_t n) {
     FILE *f = popen("xfconf-query -c xfce4-desktop -l -v 2>/dev/null", "r");
     if (!f) return 0;
-    char line[1024], want[64], fallback[1024] = "";
+    char line[1024], want[64], fallback[1024] = "", *lines[512];
+    int nl = 0, single = 1;
+    long single_num = 0;
+    while (nl < 512 && fgets(line, sizeof line, f)) {
+        /* Xfce shows one wallpaper on every desktop unless "different per desktop" is on (its
+         * default): then it's the one set for single-workspace-number (desktop 1) */
+        if (!strncmp(line, "/backdrop/single-workspace-mode ", 32)) single = !strstr(line + 32, "false");
+        else if (!strncmp(line, "/backdrop/single-workspace-number ", 34)) single_num = atol(line + 34);
+        lines[nl++] = strdup(line);
+    }
+    pclose(f);
+    if (single) d = single_num;
     snprintf(want, sizeof want, "/workspace%ld/last-image ", d);
     out[0] = 0;
-    while (fgets(line, sizeof line, f)) {
+    for (int i = 0; i < nl; i++) {
+        char *line = lines[i];
         char *hit = strstr(line, want), *mon = strstr(line, "/monitor");
         if (!hit || !mon || strncmp(line, "/backdrop/screen0/", 18)) continue;
         char *val = hit + strlen(want);
@@ -302,7 +315,7 @@ static int wallpaper_path(long d, char *out, size_t n) {
         if (!numbered && !out[0]) snprintf(out, n, "%s", val);
         else if (numbered && !fallback[0]) snprintf(fallback, sizeof fallback, "%s", val);
     }
-    pclose(f);
+    for (int i = 0; i < nl; i++) free(lines[i]);
     if (!out[0]) snprintf(out, n, "%s", fallback);
     return out[0] != 0;
 }
@@ -338,6 +351,38 @@ static cairo_surface_t *load_jpeg(const char *path) {   /* decoded at the smalle
     jpeg_destroy_decompress(&ci);
     fclose(f);
     return s;
+}
+
+/* the wallpaper at screen size, handed to the X server once as a plain pixmap: cairo then draws
+ * from it on the server and keeps no big shared-memory upload buffers around afterwards */
+static cairo_surface_t *wallpaper_on_server(cairo_surface_t *img) {
+    double iw = cairo_image_surface_get_width(img), ih = cairo_image_surface_get_height(img);
+    double s = fmax(SW / iw, SH / ih);
+    cairo_surface_t *fit = cairo_image_surface_create(CAIRO_FORMAT_RGB24, SW, SH);
+    cairo_t *cr = cairo_create(fit);
+    cairo_translate(cr, (SW - iw * s) / 2, (SH - ih * s) / 2);
+    cairo_scale(cr, s, s);
+    cairo_set_source_surface(cr, img, 0, 0);
+    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    cairo_surface_flush(fit);
+    int scr = DefaultScreen(dpy), depth = DefaultDepth(dpy, scr);
+    Visual *vis = DefaultVisual(dpy, scr);
+    cairo_surface_t *out = NULL;
+    if (depth == 24 || depth == 32) {
+        bg_pm = XCreatePixmap(dpy, root, SW, SH, depth);
+        XImage *xi = XCreateImage(dpy, vis, depth, ZPixmap, 0, (char *)cairo_image_surface_get_data(fit),
+                                  SW, SH, 32, cairo_image_surface_get_stride(fit));
+        GC gc = XCreateGC(dpy, bg_pm, 0, NULL);
+        XPutImage(dpy, bg_pm, gc, xi, 0, 0, 0, 0, SW, SH);
+        XFreeGC(dpy, gc);
+        xi->data = NULL;                                 /* the data belongs to cairo */
+        XDestroyImage(xi);
+        out = cairo_xlib_surface_create(dpy, bg_pm, vis, SW, SH);
+    }
+    cairo_surface_destroy(fit);
+    return out;
 }
 
 static cairo_surface_t *load_wallpaper(long d) {
@@ -455,9 +500,19 @@ static void draw_desk(cairo_t *cr, int d, double at_x) {
         cairo_scale(cr, k->w / TW, k->h / THUMB_H);
         cairo_set_source_surface(cr, snap[d], 0, 0);
         cairo_paint(cr);
-    } else {                                             /* no picture yet: outlines and icons */
-        cairo_set_source_rgba(cr, 1, 1, 1, 0.10);
-        cairo_paint(cr);
+    } else {                                             /* no picture yet: the wallpaper, with the
+                                                            desktop's windows as outlines and icons */
+        if (bg) {
+            cairo_save(cr);
+            cairo_translate(cr, k->x, k->y);
+            cairo_scale(cr, k->w / SW, k->h / SH);
+            cairo_set_source_surface(cr, bg, 0, 0);
+            cairo_paint(cr);
+            cairo_restore(cr);
+        } else {
+            cairo_set_source_rgba(cr, 1, 1, 1, 0.10);
+            cairo_paint(cr);
+        }
         double s = k->w / SW;
         for (int i = 0; i < nwins; i++) {
             struct win *v = &wins[i];
@@ -540,16 +595,9 @@ static void draw(void) {
     cairo_push_group(cr);                                /* draw off screen, show at once */
     cairo_set_source_rgb(cr, 0.12, 0.12, 0.13);
     cairo_paint(cr);
-    if (bg) {                                            /* the wallpaper, filling the screen */
-        double iw = cairo_image_surface_get_width(bg), ih = cairo_image_surface_get_height(bg);
-        double s = fmax(SW / iw, SH / ih);
-        cairo_save(cr);
-        cairo_translate(cr, (SW - iw * s) / 2, (SH - ih * s) / 2);
-        cairo_scale(cr, s, s);
+    if (bg) {                                            /* the wallpaper, already screen-sized */
         cairo_set_source_surface(cr, bg, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
         cairo_paint(cr);
-        cairo_restore(cr);
     }
     cairo_set_source_rgba(cr, 0, 0, 0, 0.15);
     cairo_paint(cr);
@@ -646,7 +694,9 @@ static void open_mc(void) {
     if (is_open) return;
     cur = get_card(root, A_CURDESK, 0);
     if (bg) cairo_surface_destroy(bg);
-    bg = load_wallpaper(cur);
+    bg = NULL;
+    cairo_surface_t *img = load_wallpaper(cur);
+    if (img) { bg = wallpaper_on_server(img); cairo_surface_destroy(img); }
     take_snapshot(cur);                                  /* the current desktop, as it is now */
     XCompositeRedirectSubwindows(dpy, root, CompositeRedirectAutomatic);   /* window images, even
                                                         with no compositor or one that steps aside */
@@ -681,6 +731,7 @@ static void close_mc(Window go_to, long switch_to) {
     XUnmapWindow(dpy, ov);
     free_wins();
     if (bg) { cairo_surface_destroy(bg); bg = NULL; }
+    if (bg_pm) { XFreePixmap(dpy, bg_pm); bg_pm = None; }
     XCompositeUnredirectSubwindows(dpy, root, CompositeRedirectAutomatic);
     if (switch_to >= 0 && switch_to != cur) switch_desktop(switch_to);
     if (go_to != None) activate(go_to);
