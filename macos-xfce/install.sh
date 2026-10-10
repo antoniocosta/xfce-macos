@@ -540,6 +540,10 @@ setup_apps() {
 '# the GPU decodes video through the i965 VA-API driver (the newer iHD one fails here)
 export LIBVA_DRIVER_NAME=i965' >/dev/null && ok "Video decoding uses the i965 driver (from the next login)"
     fi
+    # Firefox on X11: pixel-smooth two-finger scrolling and pinch-zoom on the trackpad (newer Firefox
+    # versions already do this; older ones need the variable, and it does no harm)
+    upsert_block "$HOME/.xsessionrc" "# >>> $TAG: firefox trackpad" "# <<< $TAG: firefox trackpad" \
+'export MOZ_USE_XINPUT2=1' >/dev/null
     local vaapi=""
     if vainfo >/dev/null 2>&1 || LIBVA_DRIVER_NAME=i965 vainfo >/dev/null 2>&1; then
         vaapi='

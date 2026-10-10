@@ -62,6 +62,31 @@ wait_until 3 bash -c "[ \$(ndesk) = 4 ]"
 eq "back on its own desktop"              "$(desk_of "$A")" 1
 eq "the Space is gone"                    "$(ndesk)" 4
 
+t_begin "fullscreen: a window that starts full screen gets its own Space too"
+reset_desktops; start_fullscreen
+O=$(open_win fs-other); wmctrl -i -r "$O" -t 1; go 1; sleep 0.2
+F=$(open_win fs-born --fullscreen)
+wait_until 3 bash -c "[ \$(desk_of $F) = 2 ]"
+eq "it is on a new Space after the desktop it opened on" "$(desk_of "$F")" 2
+eq "and we are there"                      "$(curdesk)" 2
+eq "it remembers the desktop it came from" "$(origin_of "$F")" 1
+eq "the other window stays where it was"   "$(desk_of "$O")" 1
+N=$(open_win fs-new2)
+wait_until 3 bash -c "[ \$(desk_of $N) = 1 ]"
+eq "a new window opened now goes to that desktop" "$(desk_of "$N")" 1
+
+t_begin "fullscreen: a window already full screen when the program starts is adopted, quietly"
+stop_fullscreen; reset_desktops
+O=$(open_win fs-other); wmctrl -i -r "$O" -t 1; F=$(open_win fs-old); wmctrl -i -r "$F" -t 1; go 1; sleep 0.2
+wmctrl -i -r "$F" -b add,fullscreen; sleep 0.5            # full screen with nobody watching: no Space
+eq "no Space yet"                          "$(ndesk)" 4
+start_fullscreen
+wait_until 3 bash -c "[ \$(ndesk) = 5 ]"
+eq "now it has one"                        "$(ndesk)" 5
+eq "on the desktop after its own"          "$(desk_of "$F")" 2
+eq "the other window stays on its desktop" "$(desk_of "$O")" 1
+eq "we are still looking at the same windows" "$(curdesk)" 1
+
 t_begin "fullscreen: at most 16 Spaces, as on macOS"
 reset_desktops; start_fullscreen; set_desktops 16
 A=$(open_win fs-a); wmctrl -i -r "$A" -t 3; go 3; wmctrl -i -a "$A"; sleep 0.2
@@ -115,13 +140,38 @@ check "the app gives up the focus (the dock shows above it)" bash -c "[ \$(activ
 xdotool mousemove 700 300; sleep 0.8
 eq "moving away gives it back"            "$(active)" "$(hex "$A")"
 
-t_begin "show-desktop: nothing in a full-screen app, a toggle elsewhere"
-showing() { xprop -root _NET_SHOWING_DESKTOP | awk '/= /{print $3; exit} END{if (!NR || $0 ~ /not found/) print 0}' | head -1; }
+t_begin "show-desktop: per desktop, like macOS"
+wmctrl -i -r "$A" -b remove,fullscreen; sleep 1; stop_fullscreen
+reset_desktops
+W1=$(open_win sd-1); W2=$(open_win sd-2); W3=$(open_win sd-3)
+wmctrl -i -r "$W3" -t 1; go 0; sleep 0.3
+hid() { xprop -id "$1" _NET_WM_STATE | grep -q _NET_WM_STATE_HIDDEN && echo yes || echo no; }
+"$BIN/show-desktop"; sleep 0.6
+eq "this desktop's windows are hidden"          "$(hid "$W1"):$(hid "$W2")" "yes:yes"
+eq "the other desktop's window is untouched"    "$(hid "$W3")" no
+go 1; sleep 0.4
+eq "and it stays visible when we go there"      "$(hid "$W3")" no
 "$BIN/show-desktop"; sleep 0.5
-eq "full screen: the desktop is not shown" "$(showing)" 0
-wmctrl -i -r "$A" -b remove,fullscreen; sleep 1; wmctrl -i -a "$A"; sleep 0.3
+eq "a desktop with a window hides it" "$(hid "$W3")" yes
+"$BIN/show-desktop"; sleep 0.6
+eq "again brings it back"                       "$(hid "$W3")" no
+go 0; "$BIN/show-desktop"; sleep 0.6
+eq "desktop 1's windows come back"              "$(hid "$W1"):$(hid "$W2")" "no:no"
+
+t_begin "show-desktop: nothing on an empty desktop (others stay as they are)"
+go 3; sleep 0.3
 "$BIN/show-desktop"; sleep 0.5
-eq "otherwise it shows the desktop"       "$(showing)" 1
+eq "empty desktop: nothing happens"             "$(hid "$W1"):$(hid "$W2"):$(hid "$W3")" "no:no:no"
+eq "and no global show-desktop mode"            "$(xprop -root _NET_SHOWING_DESKTOP | awk '/= /{print $3}' | grep . || echo 0)" 0
+
+t_begin "show-desktop: nothing in a full-screen app, even with our title bar up at the corner"
+start_fullscreen; go 0; wmctrl -i -a "$W1"; sleep 0.2; wmctrl -i -r "$W1" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 1 ]"; sleep 0.3
+xdotool mousemove 700 400; sleep 0.2; xdotool mousemove 1439 0
+wait_until 2 mapped "fullscreen title bar"
 "$BIN/show-desktop"; sleep 0.5
-eq "and again brings the windows back"    "$(showing)" 0
+eq "the full-screen app stays"                  "$(hid "$W1")" no
+eq "and the other windows too"                  "$(hid "$W2"):$(hid "$W3")" "no:no"
+xdotool mousemove 700 400; sleep 0.8
+wmctrl -i -r "$W1" -b remove,fullscreen; sleep 1
 stop_fullscreen

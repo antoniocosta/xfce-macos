@@ -2,6 +2,7 @@
 """A test window: win.py TITLE [--dialog] [--child TITLE SECONDS]
 
 --dialog          the window says it is a dialog
+--fullscreen      the window starts full screen
 --child T S       after S seconds, open a second window titled T that belongs to this one
                   (transient for it), like an app's Save or Print dialog
 """
@@ -18,6 +19,8 @@ win.set_default_size(400, 300)
 if "--dialog" in args:
     win.set_type_hint(Gdk.WindowTypeHint.DIALOG)
 win.connect("destroy", Gtk.main_quit)
+if "--fullscreen" in args:
+    win.fullscreen()
 win.show_all()
 
 if "--child" in args:

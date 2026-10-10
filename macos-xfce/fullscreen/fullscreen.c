@@ -277,7 +277,8 @@ static void clear_marks(void) {
 }
 
 /* full screen: a new Space right after the window's desktop, like macOS */
-static void enter_space(struct client *c) {
+static void enter_space(struct client *c, int quiet) {   /* quiet: adopt a window already full screen
+                                                            (at startup): no sliding, you stay put */
     long origin = desk_of(c->w);
     LOG("enter space 0x%lx from desktop %ld", c->w, origin);
     if (origin < 0 || origin == 0xFFFFFFFF) return;              /* sticky: stays where it is */
@@ -286,13 +287,19 @@ static void enter_space(struct client *c) {
     if (read_base() < 0) write_base(n);
     set_desktops(n + 1);
     XSync(dpy, False);
+    long here = get_card(root, A_CURDESK, 0);
     renumber(s, +1, c->w);                                       /* later desktops move up one */
-    mark_slide(origin, "fwd");
-    XDeleteProperty(dpy, c->w, A_SLIDE);                         /* it appears, not slides */
-    XSync(dpy, False);
-    switch_desktop(s);
-    move_to_desktop(c->w, s);
-    activate(c->w);
+    if (quiet) {
+        move_to_desktop(c->w, s);
+        if (here >= s) switch_desktop(here + 1);                 /* keep looking at the same windows */
+    } else {
+        mark_slide(origin, "fwd");
+        XDeleteProperty(dpy, c->w, A_SLIDE);                     /* it appears, not slides */
+        XSync(dpy, False);
+        switch_desktop(s);
+        move_to_desktop(c->w, s);
+        activate(c->w);
+    }
     set_origin(c, origin);
     c->space = (int)s;
 }
@@ -344,8 +351,8 @@ static void keep_space_to_its_app(Window w) {
 static void refresh_clients(void) {
     unsigned long n; Window *list = client_list(&n);
     static struct client keep[MAX_CLIENTS];
-    Window fresh[MAX_CLIENTS];
-    int k = 0, left = 0, nfresh = 0;
+    Window fresh[MAX_CLIENTS], adopt[MAX_CLIENTS];
+    int k = 0, left = 0, nfresh = 0, nadopt = 0, startup = ncl == 0;
     for (unsigned long i = 0; list && i < n && k < MAX_CLIENTS; i++) {
         if (list[i] == bar || list[i] == dock_helper) continue;
         struct client *old = find(list[i]);
@@ -364,6 +371,7 @@ static void refresh_clients(void) {
                 XDeleteProperty(dpy, list[i], A_ORIGIN);
                 keep[k].origin = keep[k].space = -1;
             }
+            if (keep[k].full && keep[k].origin < 0 && spaces) adopt[nadopt++] = list[i];   /* see below */
         }
         update_geo(&keep[k]);
         k++;
@@ -377,6 +385,11 @@ static void refresh_clients(void) {
     }
     memcpy(cl, keep, sizeof(struct client) * k);
     ncl = k;
+    for (int i = 0; i < nadopt; i++) {         /* full screen from the start (a restored browser, a
+                                                  video player): give it its own Space too */
+        struct client *c = find(adopt[i]);
+        if (c && c->full && c->origin < 0) enter_space(c, startup);
+    }
     for (int i = 0; i < nfresh; i++) keep_space_to_its_app(fresh[i]);
     (void)left;
 }
@@ -413,7 +426,7 @@ static void on_state(Window w) {
     c->maxed = m;
     if (f != c->full) {
         c->full = f;
-        if (spaces && f && c->origin < 0) enter_space(c);
+        if (spaces && f && c->origin < 0) enter_space(c, 0);
         else if (!f && c->origin >= 0) leave_space(c, 0);
     }
 }
