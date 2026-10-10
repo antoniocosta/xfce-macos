@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers for the install scripts (sourced, not run).
 # Every helper checks before it changes anything, so the installers are safe to re-run.
 

@@ -342,6 +342,25 @@ Xfce's Generic Monitor plugin, so there's no extra process between measurements.
 
 ---
 
+## Tests
+
+```
+tests/run.sh             # everything (live tests need: sudo apt install xvfb)
+tests/run.sh static      # scripts parse, C builds with -Werror, configs valid, nothing private, README complete
+tests/run.sh unit        # the installers' helpers, in a temporary home
+tests/run.sh live [NAME] # the behaviour itself
+```
+
+The live tests run in an **invisible X display** (Xvfb) with Xfce's own window manager, their own
+D-Bus session and their own settings store, so nothing appears on your screen and none of your
+settings are touched; the programs are built from the checkout into a temporary folder. In there
+the tests open windows, move the pointer and click: full-screen Spaces (created next to their
+desktop, removed when left or closed, new windows sent to the app's desktop, dialogs kept, the
+16-Space limit, surviving a restart), the green button, the top and bottom edges, show-desktop,
+Mission Control (opening, clicking, dragging windows onto desktops and onto +, the ×, reordering
+desktops, full-screen apps only in the bar, desktop pictures), hot corners and desktop switching.
+Mission Control helps by writing where it drew everything when `MISSION_CONTROL_LAYOUT` is set.
+
 ## License
 
 MIT, see [LICENSE](LICENSE). The projects the installers download keep their own licences:

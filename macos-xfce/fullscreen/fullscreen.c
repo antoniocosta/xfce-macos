@@ -31,6 +31,8 @@
  * it move up one (and back down when it goes). That never happens while a mouse button is held:
  * renumbering desktops under a window that is being dragged is what breaks things.
  *
+ * For tests: FULLSCREEN_LOG=<file> logs what it does there.
+ *
  * Usage: fullscreen [-G] [-P] [-S]   -G: leave the green button alone; -P: no menu/title bar
  *                                    at the top edge; -S: full-screen windows stay on their desktop
  */
@@ -45,6 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define MAX_CLIENTS 512
 #define MAX_SPACES 16       /* macOS allows 16 Spaces per display, full-screen ones included */
@@ -67,7 +70,7 @@ struct client {
 
 static Display *dpy;
 static Window root;
-static Atom A_CLIENTS, A_ACTIVE, A_STATE, A_FULL, A_MAXV, A_MAXH, A_ABOVE, A_SKIP_TB, A_SKIP_PG,
+static Atom A_CLIENTS, A_CLIENTS_PLAIN, A_ACTIVE, A_STATE, A_FULL, A_MAXV, A_MAXH, A_ABOVE, A_SKIP_TB, A_SKIP_PG,
     A_EXTENTS, A_CLOSE, A_NAME, A_UTF8, A_DESK, A_NDESK, A_CURDESK, A_TYPE, A_TYPE_DOCK, A_TYPE_NORMAL, A_SLIDE,
     A_MOTIF, A_ORIGIN;
 static const char *MENU_PROPS[] = {   /* what the global menu reads from the active window */
@@ -92,6 +95,9 @@ static int nmarked;
 static long marked_at;
 static long trim_at = -1;            /* when to remove empty Spaces (after the switch has settled) */
 
+static FILE *test_log;                   /* FULLSCREEN_LOG, for tests */
+#define LOG(...) do { if (test_log) { fprintf(test_log, __VA_ARGS__); fputc('\n', test_log); fflush(test_log); } } while (0)
+
 static long now_ms(void) {
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
@@ -114,6 +120,13 @@ static long get_card(Window w, Atom prop, long dflt) {
     long r = (v && n) ? v[0] : dflt;
     if (v) XFree(v);
     return r;
+}
+
+/* the managed windows, bottom to top. Xfce drops the stacking-order list once every window has
+ * closed and only brings it back on a restack, but always keeps the plain list: use that then */
+static Window *client_list(unsigned long *n) {
+    Window *l = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, n);
+    return l ? l : (Window *)get_prop(root, A_CLIENTS_PLAIN, XA_WINDOW, n);
 }
 
 static int has_state(Window w, Atom a) {
@@ -266,6 +279,7 @@ static void clear_marks(void) {
 /* full screen: a new Space right after the window's desktop, like macOS */
 static void enter_space(struct client *c) {
     long origin = desk_of(c->w);
+    LOG("enter space 0x%lx from desktop %ld", c->w, origin);
     if (origin < 0 || origin == 0xFFFFFFFF) return;              /* sticky: stays where it is */
     long n = get_card(root, A_NDESK, 1), s = origin + 1;
     if (n >= MAX_SPACES) return;     /* at macOS's limit of 16 Spaces: full screen where it is */
@@ -286,6 +300,7 @@ static void enter_space(struct client *c) {
 /* leaving full screen (or closed): back to its own desktop; the Space goes once it is empty */
 static void leave_space(struct client *c, int gone) {
     long origin = c->origin, s = c->space, cur = get_card(root, A_CURDESK, 0);
+    LOG("leave space 0x%lx (gone %d) back to %ld from space %ld", c->w, gone, origin, s);
     if (gone) c->origin = -1; else set_origin(c, -1);
     c->space = -1;
     if (!gone) move_to_desktop(c->w, origin);
@@ -315,8 +330,9 @@ static void keep_space_to_its_app(Window w) {
     int normal = !t || t[0] == A_TYPE_NORMAL;
     if (t) XFree(t);
     Window for_w;
-    if (!normal || XGetTransientForHint(dpy, w, &for_w)) return;     /* a dialog: stays */
+    if (!normal || XGetTransientForHint(dpy, w, &for_w)) { LOG("new window 0x%lx: a dialog, stays", w); return; }
     long origin = owner->origin;
+    LOG("new window 0x%lx on 0x%lx's Space: to desktop %ld", w, owner->w, origin);
     move_to_desktop(w, origin);
     XSync(dpy, False);
     mark_slide(origin, "back");
@@ -326,7 +342,7 @@ static void keep_space_to_its_app(Window w) {
 }
 
 static void refresh_clients(void) {
-    unsigned long n; Window *list = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, &n);
+    unsigned long n; Window *list = client_list(&n);
     static struct client keep[MAX_CLIENTS];
     Window fresh[MAX_CLIENTS];
     int k = 0, left = 0, nfresh = 0;
@@ -379,6 +395,7 @@ static void on_press(void) {
     }
     clicked = hit;
     clicked_at = now_ms();
+    LOG("press %d,%d hit 0x%lx", px, py, hit);
 }
 
 /* a window's state changed */
@@ -386,6 +403,7 @@ static void on_state(Window w) {
     struct client *c = find(w);
     if (!c) return;
     int m = is_maxed(w), f = has_state(w, A_FULL);
+    LOG("state 0x%lx maxed %d->%d full %d->%d clicked 0x%lx %ldms ago", w, c->maxed, m, c->full, f, clicked, now_ms() - clicked_at);
     if (green && m != c->maxed && !f && w == clicked && now_ms() - clicked_at < CLICK_WINDOW_MS) {
         clicked = None;                                          /* the green button: full screen */
         if (m) send_state(w, 0, A_MAXV, A_MAXH);
@@ -479,6 +497,7 @@ static void create_bar(void) {
 }
 
 static void show_bar(Window w) {
+    LOG("title bar over 0x%lx", w);
     int x, y, wd, ht, top;
     if (!frame_rect(w, &x, &y, &wd, &ht, &top)) return;
     if (bar == None) create_bar();
@@ -497,6 +516,7 @@ static void show_bar(Window w) {
 #define DOCK_ZONE 140       /* the dock (with its magnified icons) fits in this many pixels */
 
 static void show_dock(Window w) {
+    LOG("dock up over 0x%lx", w);
     if (dock_helper == None) {
         XSetWindowAttributes at = {0};
         dock_helper = XCreateWindow(dpy, root, 0, DisplayHeight(dpy, DefaultScreen(dpy)) - 1, 1, 1, 0,
@@ -526,6 +546,7 @@ static void show_dock(Window w) {
 static void hide_dock(int refocus) {
     Window w = dock_for;
     if (w == None) return;
+    LOG("dock down (refocus %d)", refocus);
     dock_for = None;
     XUnmapWindow(dpy, dock_helper);
     if (refocus) activate(w);
@@ -534,6 +555,7 @@ static void hide_dock(int refocus) {
 static void hide_bar(int refocus) {
     Window w = bar_for;
     if (bar == None || w == None) return;
+    LOG("title bar hidden (refocus %d)", refocus);
     bar_for = None;
     XUnmapWindow(dpy, bar);
     if (refocus) activate(w);   /* back on top of the panel */
@@ -562,6 +584,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-S")) spaces = 0;
         else { fprintf(stderr, "usage: %s [-G] [-P] [-S]\n", argv[0]); return 1; }
     }
+    if (getenv("FULLSCREEN_LOG")) test_log = fopen(getenv("FULLSCREEN_LOG"), "a");
+    LOG("start, pid %d", (int)getpid());
     dpy = XOpenDisplay(NULL);
     if (!dpy) { fprintf(stderr, "fullscreen: cannot open display\n"); return 1; }
     XSetErrorHandler(ignore_errors);                             /* windows vanish all the time */
@@ -570,6 +594,7 @@ int main(int argc, char **argv) {
     if (st && *st) snprintf(base_file, sizeof base_file, "%s/fullscreen-spaces", st);
     else snprintf(base_file, sizeof base_file, "%s/.local/state/fullscreen-spaces", home ? home : ".");
     A_CLIENTS = XInternAtom(dpy, "_NET_CLIENT_LIST_STACKING", False);
+    A_CLIENTS_PLAIN = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
     A_ACTIVE = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
     A_STATE = XInternAtom(dpy, "_NET_WM_STATE", False);
     A_FULL = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
@@ -688,7 +713,7 @@ int main(int argc, char **argv) {
             } else if (e.type == PropertyNotify) {
                 if (npending && ((e.xproperty.window == root && e.xproperty.atom == A_CURDESK) || e.xproperty.atom == A_DESK))
                     trim_at = now_ms() + SLIDE_CLEAR_MS;                 /* a Space may have emptied */
-                if (e.xproperty.window == root && e.xproperty.atom == A_CLIENTS) refresh_clients();
+                if (e.xproperty.window == root && (e.xproperty.atom == A_CLIENTS || e.xproperty.atom == A_CLIENTS_PLAIN)) refresh_clients();
                 else if (e.xproperty.atom == A_STATE) on_state(e.xproperty.window);
                 else if (e.xproperty.atom == A_ORIGIN || e.xproperty.atom == A_DESK) {
                     /* Mission Control may reorder or remove desktops: follow it */

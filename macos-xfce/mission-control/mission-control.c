@@ -8,6 +8,10 @@
  * neighbouring desktop), and dragging a desktop along the bar reorders the desktops (their windows
  * go with them). Esc, F3, Ctrl+Up or a click on empty space closes it.
  *
+ * For tests: with MISSION_CONTROL_LAYOUT=<file> set, every redraw writes where the desktops, the +
+ * and the windows are drawn to that file (one per line: "desk N x y w h picture name",
+ * "plus x y w h", "item 0xWINDOW x y w h", "view N", "cur N").
+ *
  * Usage: mission-control            toggle (asks the running copy; opens once if none runs)
  *        mission-control --open     open (3-finger swipe up); --close: close (swipe down)
  *        mission-control --daemon   run in the background (started at login)
@@ -68,7 +72,7 @@ struct desk { double x, y, w, h; };
 static Display *dpy;
 static Window root, ctl = None, ov = None;
 static int SW, SH, TW;
-static Atom A_CLIENTS, A_ACTIVE, A_DESK, A_NDESK, A_CURDESK, A_TYPE, A_TYPE_NORMAL, A_TYPE_DIALOG,
+static Atom A_CLIENTS, A_CLIENTS_PLAIN, A_ACTIVE, A_DESK, A_NDESK, A_CURDESK, A_TYPE, A_TYPE_NORMAL, A_TYPE_DIALOG,
     A_STATE, A_HIDDEN, A_SKIP_TB, A_FULL, A_NAME, A_UTF8, A_ICON, A_ORIGIN, A_SEL, A_MSG;
 
 struct snap {                               /* a desktop's picture and the windows it shows */
@@ -114,6 +118,13 @@ static unsigned char *get_prop(Window w, Atom prop, Atom type, unsigned long *n)
         return NULL;
     if (!data || !*n) { if (data) XFree(data); *n = 0; return NULL; }
     return data;
+}
+
+/* the managed windows, bottom to top. Xfce drops the stacking-order list once every window has
+ * closed and only brings it back on a restack, but always keeps the plain list: use that then */
+static Window *client_list(unsigned long *n) {
+    Window *l = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, n);
+    return l ? l : (Window *)get_prop(root, A_CLIENTS_PLAIN, XA_WINDOW, n);
 }
 
 static long get_card(Window w, Atom prop, long dflt) {
@@ -242,7 +253,7 @@ static void free_wins(void) {
 }
 
 static void read_windows(void) {
-    unsigned long n; Window *list = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, &n);
+    unsigned long n; Window *list = client_list(&n);
     free_wins();
     for (unsigned long i = 0; list && i < n && nwins < MAX_WIN; i++) {
         Window w = list[i];
@@ -294,7 +305,7 @@ static int cmp_win(const void *a, const void *b) {
 }
 
 static int desk_set(long d, Window *out) {   /* the normal windows on desktop d, sorted */
-    unsigned long n; Window *list = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, &n);
+    unsigned long n; Window *list = client_list(&n);
     int k = 0;
     for (unsigned long i = 0; list && i < n && k < SNAP_WINS; i++)
         if (get_card(list[i], A_DESK, -1) == d && is_normal_window(list[i])) out[k++] = list[i];
@@ -655,8 +666,32 @@ static void draw_desks(cairo_t *cr) {
     cairo_paint_with_alpha(cr, 0.9);
 }
 
+static void dump_layout(void) {   /* for tests (MISSION_CONTROL_LAYOUT) */
+    const char *path = getenv("MISSION_CONTROL_LAYOUT");
+    if (!path) return;
+    char tmp[600];
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    FILE *f = fopen(tmp, "w");
+    if (!f) return;
+    fprintf(f, "cur %ld\nview %ld\n", cur, view);
+    for (int d = 0; d < ndesk; d++) {
+        char name[64];
+        desk_name(d, name, sizeof name);
+        fprintf(f, "desk %d %.0f %.0f %.0f %.0f %d %s\n", d, desks[d].x, desks[d].y, desks[d].w, desks[d].h,
+                find_snapshot(d) != NULL, name);
+    }
+    if (plus_w > 0) fprintf(f, "plus %.0f %.0f %.0f %.0f\n", plus_x, plus_y, plus_w, plus_h);
+    for (int k = 0; k < nitems; k++) {
+        struct win *v = &wins[cur_items[k]];
+        fprintf(f, "item 0x%lx %.0f %.0f %.0f %.0f\n", v->w, v->tx, v->ty, v->tw, v->th);
+    }
+    fclose(f);
+    rename(tmp, path);
+}
+
 static void draw(void) {
     if (!is_open) return;
+    dump_layout();
     cairo_surface_t *xs = cairo_xlib_surface_create(dpy, ov, DefaultVisual(dpy, DefaultScreen(dpy)), SW, SH);
     cairo_t *cr = cairo_create(xs);
     cairo_push_group(cr);                                /* draw off screen, show at once */
@@ -761,7 +796,7 @@ static void update_hover(int x, int y) {
 
 /* if desktop d is a full-screen app's Space: the desktop the app came from, else d */
 static long origin_of_space(long d) {
-    unsigned long n; Window *list = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, &n);
+    unsigned long n; Window *list = client_list(&n);
     long o = d;
     for (unsigned long i = 0; list && i < n; i++)
         if (get_card(list[i], A_DESK, -1) == d && has_atom(list[i], A_STATE, A_FULL)) {
@@ -822,6 +857,7 @@ static void open_mc(void) {
 static void close_mc(Window go_to, long switch_to) {
     if (!is_open) return;
     is_open = 0;
+    if (getenv("MISSION_CONTROL_LAYOUT")) remove(getenv("MISSION_CONTROL_LAYOUT"));   /* tests: closed */
     XUngrabKeyboard(dpy, CurrentTime);
     XUnmapWindow(dpy, ov);
     free_wins();
@@ -1015,6 +1051,7 @@ int main(int argc, char **argv) {
     SW = DisplayWidth(dpy, DefaultScreen(dpy)); SH = DisplayHeight(dpy, DefaultScreen(dpy));
     TW = THUMB_H * SW / SH;
     A_CLIENTS = XInternAtom(dpy, "_NET_CLIENT_LIST_STACKING", False);
+    A_CLIENTS_PLAIN = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
     A_ACTIVE = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
     A_DESK = XInternAtom(dpy, "_NET_WM_DESKTOP", False);
     A_NDESK = XInternAtom(dpy, "_NET_NUMBER_OF_DESKTOPS", False);
