@@ -1,6 +1,7 @@
 # Linux Utilities
 
-Make **Linux Mint Xfce** feel like **macOS**, with as little CPU and memory as possible. It's
+Make **Linux Mint Xfce** feel like **macOS**, with as little CPU and memory as possible: every part is
+built with performance and a low footprint in mind (see [Light by design](#macos-xfce)). It's
 for old Macs and low-end laptops, where macOS no longer updates or a heavy desktop no longer
 fits. The goal is that someone coming from a Mac doesn't have to relearn anything: the same
 shortcuts, gestures, menu bar, dock, Mission Control, hot corners, and settings with the same
@@ -86,6 +87,25 @@ compositor.
 ---
 
 ## macos-xfce
+
+**Light by design.** Everything here is chosen for performance and a small footprint first,
+so it runs well on a 2012 MacBook Air with 2 cores and the oldest Intel graphics that still work.
+The rules every part follows:
+
+- **Xfce's own features first.** Desktops, window dragging across them, the Cmd+Tab switcher,
+  notifications and the menu bar are Xfce's, only configured. Nothing replaces the window manager
+  or the panel.
+- **No resident process unless it must be one.** Helpers are a few lines of shell, Python or C
+  and sleep until something happens: volume-feedback waits on audio events, net-badge runs from
+  the panel's timer, settings dialogs only exist while open.
+- **When something must poll, it polls cheaply.** hotcorner asks X for the pointer position
+  5 times a second and speeds up only near a corner (3 MB, about 0.01 % CPU).
+- **The heaviest part is optional.** The desktop slide needs a compositor (picom, 0.3 % CPU on
+  average); `desktop-slide off` goes back to Xfce's own.
+- **Less running in the background.** `--trim` switches off services a laptop rarely needs (about
+  350 MB of RAM back on the test machine); Firefox gets fewer processes and unloads idle tabs.
+- **Measured, not assumed.** Every part's memory and CPU are checked on the test machine after
+  each change; see [Footprint](#footprint).
 
 | macOS | Here | How |
 |---|---|---|
