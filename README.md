@@ -23,6 +23,7 @@ macos-xfce/          the core: ./macos-xfce/install.sh sets up all of it
   mission-control/   └ Mission Control: the Spaces bar on top, the current desktop's windows below
 extras/
   net-badge/         network latency in the menu bar
+  vpntray/           top-bar panel for a VPN command-line tool
 lib/common.sh        helpers shared by the installers
 ```
 
@@ -39,6 +40,7 @@ lib/common.sh        helpers shared by the installers
 | [ssh-keyring](#ssh-keyring) | Unlocks your SSH key at login from the login keyring, like the macOS Keychain (only when you have a key). |
 | **Extras** | |
 | [net-badge](#net-badge) | Network latency in the menu bar ("● 24 ms"), with a popover. |
+| [vpntray](#vpntray) | Top-bar VPN panel in the style of the macOS menu-bar app: connect toggle, fastest, searchable locations, login. Unofficial. |
 
 Tested on Linux Mint 22.3 Xfce (X11) on a MacBook Air mid 2012 (Intel HD 4000, 8 GB).
 Nothing is tied to that machine: Mac-only parts (fan control, light sensor, Apple trackpad
@@ -339,6 +341,23 @@ handshake to Apple's captive-portal server. Colours follow
 300 ms). The tooltip and a click popover show the connection, Wi-Fi name, a sparkline of the
 last 3 minutes and min/avg/max; a notification appears when the connection turns poor. Runs in
 Xfce's Generic Monitor plugin, so there's no extra process between measurements.
+
+## vpntray
+
+A top-bar shield (outline: off, filled: on) with a compact panel like the macOS VPN menu-bar
+apps: a connect switch with the status and location, a "Fastest location" row, a searchable list
+of locations (flag, city, ping), your account with Log out, and a login form when logged out.
+Errors show inline; the panel hides when it loses focus. Click the shield and choose
+*Open panel* (or middle-click it; running `vpntray` also opens it).
+
+It drives the AdGuard VPN command-line tool (`adguardvpn-cli`, installed separately) and is
+**unofficial and not affiliated with AdGuard**. Python 3 + GTK3, about 30 MB, 0% CPU when idle:
+no timers; the status is read at start, when the panel opens and after each action. Your
+password goes only to the tool's standard input; nothing is stored. Connecting in TUN mode needs
+root, so vpntray points `SUDO_ASKPASS` at a small password dialog (zenity). No sudoers rule.
+
+`./extras/vpntray/install.sh`. Tests, without a VPN or display (a fake command-line tool):
+`python3 extras/vpntray/test_vpntray.py`.
 
 ---
 

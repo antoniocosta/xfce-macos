@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Password prompt for sudo (SUDO_ASKPASS): vpntray sets this up so connecting works without a terminal.
+# The password goes to sudo on stdout and nowhere else.
+exec zenity --password --title="vpntray" --width=320 \
+    --text="${1:-Administrator password (needed to set up the VPN tunnel)}" 2>/dev/null

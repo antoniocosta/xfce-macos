@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Stand-in for the VPN command-line tool, for the tests: same output shapes, state in $FAKE_VPN_DIR.
+D="${FAKE_VPN_DIR:?set FAKE_VPN_DIR}"; mkdir -p "$D"
+echo "$*" >> "$D/calls"
+B=$'\033[1m'; R=$'\033[0m'
+case "${1:-}" in
+status)
+    if [[ -f "$D/connected" ]]; then echo "Connected to $(cat "$D/connected") in TUN mode, running on tun0"
+    else echo "VPN is disconnected"; echo "You can connect to a location by running \`fake connect -l 'x'\`"; fi ;;
+license)
+    if [[ -f "$D/user" ]]; then
+        echo "Logged in as $B$(cat "$D/user")$R"; echo "You are using the ${B}PREMIUM$R version"
+        echo "Up to ${B}10$R devices simultaneously"; echo "Your subscription is valid until 2030-01-31"
+    else echo "You are not logged in. Run 'login'."; fi ;;
+list-locations)
+    printf '%sISO   COUNTRY              CITY                           PING ESTIMATE\n%s' "$B" "$R"
+    printf 'NL    Netherlands          Amsterdam                      24        \n'
+    printf 'US    United States        New York                       95        \n'
+    printf 'JP    Japan                Tokyo                          240       \n\n'
+    echo "You can connect to a location by running \`fake connect -l 'x'\`" ;;
+connect)
+    [[ -f "$D/user" ]] || { echo "Error: not logged in" >&2; exit 1; }
+    [[ -n "${FAKE_FAIL:-}" ]] && { echo "Error: ${FAKE_FAIL}" >&2; exit 1; }
+    loc="AMSTERDAM, Netherlands"
+    while (( $# )); do [[ $1 == -l ]] && { loc="$2"; shift; }; shift; done
+    echo "$loc" > "$D/connected"; echo "Successfully Connected to $loc" ;;
+disconnect) rm -f "$D/connected"; echo "Successfully Disconnected" ;;
+login)
+    read -r email; read -r pass
+    [[ -n "$pass" && "$pass" != wrong ]] || { echo "Error: invalid credentials" >&2; exit 1; }
+    echo "$email" > "$D/user"; echo "Successfully Logged in" ;;
+logout) rm -f "$D/user" "$D/connected"; echo "Successfully Logged out" ;;
+*) echo "unknown command" >&2; exit 2 ;;
+esac
