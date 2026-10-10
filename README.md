@@ -19,7 +19,8 @@ macos-xfce/          the core: ./macos-xfce/install.sh sets up all of it
   disk-label/        ├ "Macintosh HD" with free space on the desktop
   auto-brightness/   ├ automatic screen and keyboard brightness
   ssh-keyring/       ├ SSH key unlocked at login, like the Keychain
-  fullscreen/        └ full screen: green button, its own Space, menu bar at the top edge
+  fullscreen/        ├ full screen: green button, its own Space, menu bar at the top edge
+  mission-control/   └ Mission Control: the Spaces bar on top, the current desktop's windows below
 extras/
   net-badge/         network latency in the menu bar
 lib/common.sh        helpers shared by the installers
@@ -33,6 +34,7 @@ lib/common.sh        helpers shared by the installers
 | [volume-feedback](#volume-feedback) | The click when you change the volume. |
 | [disk-label](#disk-label) | A "Macintosh HD / 91 GB free" icon on the desktop, with live free space. |
 | [auto-brightness](#auto-brightness) | Screen and keyboard backlight follow the room light, like a MacBook (needs its light sensor). |
+| [mission-control](#mission-control) | Mission Control: every desktop in a Spaces bar on top, the current desktop's windows below; drag windows between desktops, + and × to add and remove desktops. |
 | [fullscreen](#fullscreen) | Full screen like macOS: the green button and Cmd+Ctrl+F go full screen in a Space of its own; at the top edge the menu bar and title bar slide in. |
 | [ssh-keyring](#ssh-keyring) | Unlocks your SSH key at login from the login keyring, like the macOS Keychain (only when you have a key). |
 | **Extras** | |
@@ -78,7 +80,7 @@ Measured on the 2012 MacBook Air over a 12-hour session (resident memory, averag
 | fullscreen | 9 MB | 0 (sleeps until a window changes; watches the pointer only in full screen) |
 | volume-feedback | 11 MB | 0 (sleeps until the volume changes) |
 | disk-label | 4 MB | 0 (checks once a minute) |
-| skippy-xd (Mission Control, waiting) | 11 MB | 0 |
+| mission-control (waiting) | 2 MB own, 7 MB with shared | 0 (wakes only on a desktop switch) |
 | Touchégg client | 15 MB | 0 |
 | Plank (dock) | 57 MB | 0 |
 | picom (desktop slide; replaces Xfce's compositor) | 79 MB | 0.3 % |
@@ -117,11 +119,11 @@ The rules every part follows:
 | Ctrl+Tab / Ctrl+Shift+Tab | next / previous tab | Toshy keymap |
 | Ctrl+← / Ctrl+→ | previous / next desktop, with the slide | `desktop-switch` ([desktop-slide](#desktop-slide)) |
 | green button, Cmd+Ctrl+F | full screen in its own Space; menu bar and title bar at the top edge | [fullscreen](#fullscreen) |
-| Ctrl+↑, F3, bottom-right corner | Mission Control: every window of every desktop | [skippy-xd](https://github.com/felixfung/skippy-xd), built from a release |
+| Ctrl+↑, F3, 3-finger swipe up, bottom-right corner | Mission Control: the Spaces bar on top, the current desktop's windows below | [mission-control](#mission-control) |
 | F4 | Launchpad: full-screen app grid, type to filter | rofi, `files/.config/rofi/launchpad.rasi` |
 | Cmd+Space | Spotlight-style app search | rofi, `files/.config/rofi/config.rasi` |
 | Cmd+Shift+3 / 4 / 5 | full screen / area / tool, saved to `~/Pictures/Screenshots` | xfce4-screenshooter |
-| 3-finger swipe left / right / up | previous / next desktop / show desktop | Touchégg, `files/.config/touchegg/touchegg.conf`; its client runs under `touchegg-client`, which restarts it if it crashes |
+| 3-finger swipe left / right / up / down, spread thumb and three fingers | previous / next desktop, Mission Control open / closed, show desktop | Touchégg, `files/.config/touchegg/touchegg.conf`; its client runs under `touchegg-client`, which restarts it if it crashes |
 | Spaces | 4 desktops; drag a window against the left/right screen edge to carry it over | Xfce's window manager (`wrap_windows`) |
 | a window asking for attention | takes you to its desktop (Xfce's default pulls it to yours) | Xfce `activate_action = switch` |
 | menu bar | menu · app menu (global menu) ··· status icons · volume · battery · notifications · clock | xfce4-panel + `xfce4-appmenu-plugin` |
@@ -172,7 +174,6 @@ translations back.
   Ctrl shortcuts are bound as `<Super>…`.
 - The global menu loads through `GTK_MODULES` at login. Switching it on live crashes running tray
   apps, so it only appears after logging in again.
-- skippy-xd's development branch can crash; the installer stays on a release tag.
 - A Toshy reinstall brings its rainbow tray icon back; re-run the installer.
 
 ### Undo
@@ -194,8 +195,7 @@ mouse button is held, so dragging a window into a corner does nothing.
 `hotcorner.c` asks X where the pointer is 5 times a second, and 50 times a second only while the
 pointer is near a corner, so it reacts quickly and still uses almost nothing. Polling, rather
 than an invisible window in the corner, keeps it working when the dock or a full-screen window
-covers the corner. `hot-corners` starts it with the corners and restarts it (and skippy-xd) if
-either ever stops.
+covers the corner. `hot-corners` starts it with the corners and restarts it if it ever stops.
 
 ---
 
@@ -241,6 +241,31 @@ yourself, it keeps that offset, like macOS. Brightness is set through logind, so
 needed. Turn screen or keyboard on and off in Settings Manager → **Auto Brightness**.
 
 Installs only where there is a light sensor.
+
+---
+
+## mission-control
+
+macOS Mission Control. The **Spaces bar** across the top shows every desktop, with a full-screen
+app's Space named after the app; below it, the **current desktop's windows**, side by side, with
+their icons (and the title of the one under the pointer).
+
+- Click a window to go to it; click a desktop to switch to it; Esc, F3, Ctrl+↑, a 3-finger swipe
+  down or a click on empty space closes it.
+- Drag a window onto a desktop to move it there, or onto **+** to give it a desktop of its own.
+- **+** adds a desktop; the **×** on a hovered desktop removes it (its windows move to the
+  neighbouring desktop; on a full-screen Space it leaves full screen).
+
+How it stays light: one small C program that sleeps in the background (about 2 MB of its own).
+X keeps no picture of hidden desktops, so when you arrive on a desktop (an event from the window
+manager, no timer) it waits for the slide to finish and takes one small snapshot: that's the
+desktop's picture in the Spaces bar. A desktop without one yet shows its windows' outlines and
+icons. While open, the windows are drawn from their own composited images, so they're live.
+
+```
+mission-control              toggle (F3, Ctrl+↑, the bottom-right corner)
+mission-control --open       open (3-finger swipe up)   --close: close (swipe down)
+```
 
 ---
 

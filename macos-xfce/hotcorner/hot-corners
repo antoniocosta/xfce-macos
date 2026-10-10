@@ -1,13 +1,12 @@
 #!/bin/bash
-# macOS-style hot corners: top-right = show desktop, bottom-right = Mission Control (skippy-xd);
+# macOS-style hot corners: top-right = show desktop, bottom-right = Mission Control;
 # (dragging windows across desktops is xfwm4's own wrap_windows)
-# Restarts hotcorner (and the skippy-xd daemon) if either ever stops.
+# Restarts hotcorner if it ever stops.
 for p in $(pgrep -u "$USER" -x hot-corners); do [ "$p" != $$ ] && kill "$p"; done
 pkill -u "$USER" -x hotcorner 2>/dev/null
 while true; do
-  pgrep -u "$USER" -x skippy-xd >/dev/null || (setsid "$HOME/.local/bin/skippy-xd" --start-daemon >/dev/null 2>&1 &)
   "$HOME/.local/bin/hotcorner" -d 100 \
     tr 'if wmctrl -m | grep -q "mode: ON"; then wmctrl -k off; else wmctrl -k on; fi' \
-    br 'pgrep -u "$USER" -x skippy-xd >/dev/null || { setsid "$HOME/.local/bin/skippy-xd" --start-daemon >/dev/null 2>&1 & sleep 1; }; "$HOME/.local/bin/skippy-xd" --expose --desktop -1'
+    br "$HOME/.local/bin/mission-control"
   sleep 2
 done

@@ -4,7 +4,7 @@
 #
 # Makes Linux Mint 22.x Xfce look and behave like macOS, as lightly as possible: Cmd-key
 # shortcuts (Toshy), a menu bar with a global menu, a dock, Spotlight and Launchpad (rofi),
-# Mission Control (skippy-xd), hot corners, 3-finger desktop swipes (Touchégg) with the
+# Mission Control, hot corners, 3-finger desktop swipes (Touchégg) with the
 # macOS slide, a macOS-like Cmd+Tab, the volume click, automatic brightness on Macs, and
 # the SSH key unlocked from the login keyring like the Keychain. Each part has its own folder
 # here and can also be installed alone with its install.sh. See the README for the full list.
@@ -27,7 +27,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 FILES="$HERE/files"
 . "$ROOT/lib/common.sh"
-SKIPPY_TAG="v2026.06.24"          # newer master segfaulted in testing; keep the release
 APPLE_CURSOR_TAG="v2.0.1"
 WHITESUR_ICONS_TAG="2026-09-10"   # only its battery icons are used
 
@@ -48,13 +47,11 @@ setup_packages() {
         touchegg rofi wmctrl xdotool x11-utils       # gestures, launcher, window control
         xfce4-appmenu-plugin appmenu-gtk3-module appmenu-gtk2-module appmenu-registrar  # global menu
         fonts-inter sassc git curl unzip             # font, theme build
-        meson ninja-build gcc libx11-dev libchipmunk-dev libgif-dev libxi-dev libxft-dev
-        libxcomposite-dev libxdamage-dev libxinerama-dev libjpeg-dev libpng-dev  # skippy-xd build
         mesa-utils vainfo                            # hardware video decoding check
         zram-tools                                   # compressed swap in RAM
     )
     local d p
-    for d in hotcorner desktop-slide volume-feedback disk-label auto-brightness ssh-keyring fullscreen; do
+    for d in hotcorner desktop-slide volume-feedback disk-label auto-brightness ssh-keyring fullscreen mission-control; do
         while read -r p; do pkgs+=("$p"); done < <(packages_of "$HERE/$d")
     done
     is_mac    && pkgs+=(mbpfan)                      # MacBook fan control
@@ -437,8 +434,8 @@ setup_shortcuts() {
     xfset $k "/commands/custom/<Shift>Print"  string "xfce4-screenshooter"                                    # Cmd+Shift+5
     xfset $k "/commands/custom/<Super>Left"   string "$BIN/desktop-switch prev"                               # Ctrl+Left
     xfset $k "/commands/custom/<Super>Right"  string "$BIN/desktop-switch next"                               # Ctrl+Right
-    xfset $k "/commands/custom/<Super>Up"     string "$BIN/skippy-xd --expose --desktop -1"                   # Ctrl+Up
-    xfset $k "/commands/custom/XF86LaunchA"   string "$BIN/skippy-xd --expose --desktop -1"                   # F3
+    xfset $k "/commands/custom/<Super>Up"     string "$BIN/mission-control"                                   # Ctrl+Up
+    xfset $k "/commands/custom/XF86LaunchA"   string "$BIN/mission-control"                                   # F3
     xfset $k "/commands/custom/XF86LaunchB"   string "rofi -show drun -theme $HOME/.config/rofi/launchpad.rasi"  # F4
     # Ctrl alone must not open the Mint menu (it arrives as a lone Super key)
     xfconf-query -c $k -p "/commands/custom/Super_L" -r 2>/dev/null || true
@@ -467,25 +464,13 @@ setup_desktop_icons() {
 }
 
 # ==============================================================================
-# Mission Control (skippy-xd), Launchpad and Spotlight (rofi), gestures, and the utilities
+# Mission Control, Launchpad and Spotlight (rofi), gestures, and the utilities
 # ==============================================================================
 setup_helpers() {
     section "Mission Control, gestures, utilities"
-    local skippy_ver; skippy_ver="$(sed 's/^v//; s/\.0\([0-9]\)/.\1/g' <<<"$SKIPPY_TAG")"   # v2026.06.24 -> 2026.6.24
-    if ! "$BIN/skippy-xd" --help 2>&1 | grep -qF "($skippy_ver)"; then
-        info "Building skippy-xd $SKIPPY_TAG (Mission Control)"
-        rm -rf "$SRC/skippy-xd-stable"; mkdir -p "$SRC" "$BIN"
-        git clone -q --depth=1 --branch "$SKIPPY_TAG" https://github.com/felixfung/skippy-xd.git "$SRC/skippy-xd-stable"
-        (cd "$SRC/skippy-xd-stable" && meson setup build --prefix="$HOME/.local" --buildtype=release >/dev/null && ninja -C build >/dev/null)
-        install -m 755 "$SRC/skippy-xd-stable/build/skippy-xd" "$BIN/skippy-xd"
-        pkill -u "$USER" -x skippy-xd 2>/dev/null || true
-        ok "skippy-xd $SKIPPY_TAG installed"
-    fi
-    # skippy-xd's own config, with a darker backdrop behind the windows, like Mission Control
-    local rc; rc="$(mktemp)"
-    sed '0,/^background = .*/s//background = #000000aa/' "$SRC/skippy-xd-stable/skippy-xd.rc" > "$rc"
-    [[ "$(install_file "$rc" "$HOME/.config/skippy-xd/skippy-xd.rc")" == changed ]] && ok "Installed ~/.config/skippy-xd/skippy-xd.rc"
-    rm -f "$rc"
+    # retired: skippy-xd, the previous Mission Control (replaced by mission-control/)
+    pkill -u "$USER" -x skippy-xd 2>/dev/null || true
+    rm -rf "$BIN/skippy-xd" "$SRC/skippy-xd-stable" "$HOME/.config/skippy-xd"
 
     local f
     for f in .config/rofi/config.rasi .config/rofi/launchpad.rasi .config/touchegg/touchegg.conf; do
@@ -500,7 +485,7 @@ setup_helpers() {
     (setsid "$BIN/touchegg-client" >/dev/null 2>&1 &)   # replaces any running client; reloads the config
 
     local u
-    for u in hotcorner desktop-slide volume-feedback auto-brightness fullscreen; do "$HERE/$u/install.sh"; done
+    for u in mission-control hotcorner desktop-slide volume-feedback auto-brightness fullscreen; do "$HERE/$u/install.sh"; done
     # the SSH key unlocked at login from the login keyring, like the macOS Keychain
     [[ -f "$HOME/.ssh/id_ed25519" ]] && "$HERE/ssh-keyring/install.sh"
     return 0
