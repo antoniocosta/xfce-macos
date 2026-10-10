@@ -57,4 +57,7 @@ check "bottom right sleeps the display" bash -c "[[ '$got' == *'br sleep 0.5; xs
 printf 'tl = none\ntr = none\nbl = none\nbr = none\n' > "$HOME/.config/linux-utilities/hot-corners.conf"
 eq "every corner off: hotcorner isn't started" "$(run_hc)" ""
 
+t_begin "setup app: the command lines and output handling"
+check "unit tests pass" python3 "$ROOT/macos-xfce/setup-app/test_setup.py"
+
 t_summary

@@ -21,7 +21,8 @@ macos-xfce/          the core: ./macos-xfce/install.sh sets up all of it
   ssh-keyring/       ├ SSH key unlocked at login, like the Keychain
   fullscreen/        ├ full screen: green button, its own Space, menu bar at the top edge
   mission-control/   ├ Mission Control: the Spaces bar on top, the current desktop's windows below
-  settings/          └ macOS-style settings pages in Xfce's Settings Manager
+  settings/          ├ macOS-style settings pages in Xfce's Settings Manager
+  setup-app/         └ a small window to install, update or restore
 extras/
   net-badge/         network latency in the menu bar
   vpntray/           top-bar panel for a VPN command-line tool
@@ -307,6 +308,23 @@ in step), and the rest are small files under `~/.config`.
 macos-settings dock | trackpad | displays | keyboard | hot-corners     open a page
 macos-settings --apply                                                  (at login) the saved trackpad scroll distance and speed
 ```
+
+---
+
+## setup-app
+
+A small window for people who'd rather not use the terminal: **Make Xfce feel like macOS** (in your
+applications menu after install, or run `macos-xfce/setup-app/linux-utilities-setup`). Tick what you
+want (the core is always included; the services-and-apps clean-up and English-only are optional,
+and so are the extras), press **Install**, and watch what the installer does in the log below.
+**Restore…** previews what would be undone, undoes the changes, or undoes them and removes the
+packages the installer added; **What was changed** lists everything recorded. When a password is
+needed, a small graphical prompt appears.
+
+It only wraps `macos-xfce/install.sh`: nothing here does anything the terminal commands can't. It
+runs from the checkout, so keep the folder where it is. The first installation may ask Toshy
+questions that the window can't answer: if that happens, run `./macos-xfce/install.sh` once in a
+terminal.
 
 ---
 

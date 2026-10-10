@@ -1,0 +1,218 @@
+#!/usr/bin/python3
+"""Setup: a small window to install, update or undo the macOS feel for Xfce.
+
+Choose what to add, press Install, and watch what the installer does. Restore undoes it again.
+It only wraps the command-line installer (macos-xfce/install.sh): nothing here does anything the
+terminal commands can't. When it asks for a password, a small graphical prompt appears.
+"""
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, HERE)
+
+import setup_core as core  # noqa: E402
+
+CSS = b"""
+.title    { font-size: 22px; font-weight: bold; }
+.subtitle { opacity: 0.7; }
+.log      { font-family: monospace; font-size: 11px; }
+"""
+
+
+class Setup:
+    def __init__(self):
+        import gi
+        gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk, GLib, Gdk, GdkPixbuf
+        self.Gtk, self.GLib, self.Gdk = Gtk, GLib, Gdk
+        css = Gtk.CssProvider()
+        css.load_from_data(CSS)
+        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self.queue, self.proc, self.watch = [], None, None
+        self.build(GdkPixbuf)
+
+    # ---- window --------------------------------------------------------------------------
+    def build(self, GdkPixbuf):
+        Gtk = self.Gtk
+        w = self.win = Gtk.Window(title="Make Xfce feel like macOS")
+        w.set_default_size(620, 640)
+        w.connect("destroy", self.quit)
+        try:
+            w.set_icon(GdkPixbuf.Pixbuf.new_from_file_at_size(os.path.join(HERE, "icon", "linux-utilities-setup.svg"), 128, 128))
+        except Exception:
+            pass
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        outer.set_border_width(20)
+        w.add(outer)
+
+        head = Gtk.Box(spacing=14)
+        try:
+            img = Gtk.Image.new_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_size(
+                os.path.join(HERE, "icon", "linux-utilities-setup.svg"), 64, 64))
+            head.pack_start(img, False, False, 0)
+        except Exception:
+            pass
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        t = Gtk.Label(label="Make Xfce feel like macOS", xalign=0)
+        t.get_style_context().add_class("title")
+        s = Gtk.Label(label="Cmd shortcuts, menu bar, Dock, Mission Control, hot corners and more, as light as possible.",
+                      xalign=0, wrap=True)
+        s.get_style_context().add_class("subtitle")
+        texts.pack_start(t, False, False, 0)
+        texts.pack_start(s, False, False, 0)
+        head.pack_start(texts, True, True, 0)
+        outer.pack_start(head, False, False, 0)
+
+        frame = Gtk.Frame(label="What to install")
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_border_width(12)
+        frame.add(box)
+        core_lbl = Gtk.CheckButton(label="The macOS look and feel (always included)")
+        core_lbl.set_active(True)
+        core_lbl.set_sensitive(False)
+        box.pack_start(core_lbl, False, False, 0)
+        self.cb_trim = Gtk.CheckButton(label="Also remove services and apps a laptop rarely needs (printing, LibreOffice, ...)")
+        self.cb_english = Gtk.CheckButton(label="Also remove other languages' translations and manuals (English only)")
+        box.pack_start(self.cb_trim, False, False, 0)
+        box.pack_start(self.cb_english, False, False, 0)
+        self.extras = {}
+        extras = core.available_extras()
+        if extras:
+            box.pack_start(Gtk.Separator(), False, False, 4)
+            for name, label in extras:
+                cb = Gtk.CheckButton(label=label)
+                self.extras[name] = cb
+                box.pack_start(cb, False, False, 0)
+        outer.pack_start(frame, False, False, 0)
+
+        bar = Gtk.Box(spacing=8)
+        self.btn_install = Gtk.Button(label="Install")
+        self.btn_install.get_style_context().add_class("suggested-action")
+        self.btn_install.connect("clicked", lambda *_: self.install())
+        bar.pack_start(self.btn_install, False, False, 0)
+        self.btn_restore = Gtk.MenuButton(label="Restore…")
+        menu = Gtk.Menu()
+        for label, fn in (("Preview what would be undone", lambda *_: self.restore(dry=True)),
+                          ("Undo the changes", lambda *_: self.restore()),
+                          ("Undo the changes and remove the packages it added", lambda *_: self.restore(packages=True))):
+            mi = Gtk.MenuItem(label=label)
+            mi.connect("activate", fn)
+            menu.append(mi)
+        menu.show_all()
+        self.btn_restore.set_popup(menu)
+        bar.pack_start(self.btn_restore, False, False, 0)
+        self.btn_changes = Gtk.Button(label="What was changed")
+        self.btn_changes.connect("clicked", lambda *_: self.run(core.list_changes_commands(), "Changes recorded so far"))
+        bar.pack_start(self.btn_changes, False, False, 0)
+        self.spinner = Gtk.Spinner()
+        bar.pack_end(self.spinner, False, False, 0)
+        outer.pack_start(bar, False, False, 0)
+
+        self.status = Gtk.Label(label="Ready.", xalign=0)
+        outer.pack_start(self.status, False, False, 0)
+        sc = Gtk.ScrolledWindow()
+        sc.set_shadow_type(Gtk.ShadowType.IN)
+        self.log = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR)
+        self.log.get_style_context().add_class("log")
+        sc.add(self.log)
+        outer.pack_start(sc, True, True, 0)
+        self.buf = self.log.get_buffer()
+
+    # ---- running the installer -----------------------------------------------------------
+    def say(self, text):
+        end = self.buf.get_end_iter()
+        self.buf.insert(end, text)
+        mark = self.buf.create_mark(None, self.buf.get_end_iter(), False)
+        self.log.scroll_mark_onscreen(mark)
+
+    def busy(self, on, text=None):
+        for b in (self.btn_install, self.btn_restore, self.btn_changes):
+            b.set_sensitive(not on)
+        self.spinner.start() if on else self.spinner.stop()
+        if text:
+            self.status.set_text(text)
+
+    def install(self):
+        extras = [n for n, cb in self.extras.items() if cb.get_active()]
+        self.run(core.install_commands(self.cb_trim.get_active(), self.cb_english.get_active(), extras),
+                 "Installing", done="Done. Log out and back in once so the global menu and Toshy start cleanly.")
+
+    def restore(self, dry=False, packages=False):
+        if not dry:
+            d = self.Gtk.MessageDialog(transient_for=self.win, modal=True, message_type=self.Gtk.MessageType.QUESTION,
+                                       buttons=self.Gtk.ButtonsType.OK_CANCEL, text="Undo the changes?")
+            d.format_secondary_text("Everything the installer changed is put back as it was before the first install"
+                                    + (", and the packages it added are removed." if packages else ".")
+                                    + " Deleted translations can't come back this way.")
+            ok = d.run() == self.Gtk.ResponseType.OK
+            d.destroy()
+            if not ok:
+                return
+        self.run(core.restore_commands(dry_run=dry, packages=packages),
+                 "Previewing" if dry else "Restoring", done="Preview shown. Nothing was changed." if dry else "Restored.")
+
+    def run(self, commands, title, done="Finished."):
+        self.queue = list(commands)
+        self.done_text = done
+        self.failed = False
+        self.buf.set_text("")
+        self.busy(True, title + "…")
+        self.next_command()
+
+    def next_command(self):
+        if not self.queue:
+            self.finish()
+            return
+        cmd = self.queue.pop(0)
+        self.say(f"$ {' '.join(cmd)}\n")
+        env = core.child_env(os.path.join(HERE, "setup-askpass"))
+        try:
+            self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                         env=env, start_new_session=True, bufsize=0)
+        except OSError as e:
+            self.say(f"Could not start: {e}\n")
+            self.failed = True
+            self.queue = []
+            self.finish()
+            return
+        self.watch = self.GLib.io_add_watch(self.proc.stdout.fileno(), self.GLib.IO_IN | self.GLib.IO_HUP, self.on_output)
+
+    def on_output(self, fd, cond):
+        try:
+            data = os.read(fd, 65536)
+        except OSError:
+            data = b""
+        if data:
+            self.say(core.strip_ansi(data.decode("utf-8", "replace")))
+            return True
+        code = self.proc.wait()                  # end of its output: it has finished
+        self.proc.stdout.close()
+        self.watch = None
+        if code != 0:
+            self.failed = True
+            self.queue = []
+            self.say(f"\n[exit status {code}]\n")
+        self.next_command()
+        return False
+
+    def finish(self):
+        self.busy(False)
+        self.status.set_text("Something went wrong: see the log above." if self.failed else self.done_text)
+        self.finished = True
+
+    def quit(self, *_):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+        self.Gtk.main_quit()
+
+
+def main():
+    app = Setup()
+    app.win.show_all()
+    app.Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

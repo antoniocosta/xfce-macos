@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Password prompt for sudo (SUDO_ASKPASS) used by the setup app, which has no terminal.
+# The password goes to sudo on stdout and nowhere else.
+exec zenity --password --title="Administrator password" --width=340 \
+    --text="${1:-Administrator password (needed to install packages and system settings)}" 2>/dev/null
