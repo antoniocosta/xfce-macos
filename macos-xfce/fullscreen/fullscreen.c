@@ -60,7 +60,7 @@ static Display *dpy;
 static Window root;
 static Atom A_CLIENTS, A_ACTIVE, A_STATE, A_FULL, A_MAXV, A_MAXH, A_ABOVE, A_SKIP_TB, A_SKIP_PG,
     A_EXTENTS, A_CLOSE, A_NAME, A_UTF8, A_DESK, A_NDESK, A_CURDESK, A_TYPE, A_TYPE_DOCK, A_SLIDE,
-    A_MOTIF;
+    A_MOTIF, A_ORIGIN;
 static const char *MENU_PROPS[] = {   /* what the global menu reads from the active window */
     "_GTK_UNIQUE_BUS_NAME", "_GTK_MENUBAR_OBJECT_PATH", "_GTK_APPLICATION_OBJECT_PATH",
     "_GTK_WINDOW_OBJECT_PATH", "_GTK_APP_MENU_OBJECT_PATH", "_GTK_APPLICATION_ID",
@@ -225,11 +225,13 @@ static void enter_space(struct client *c) {
     move_to_desktop(c->w, n);
     activate(c->w);
     c->origin = (int)origin;
+    XChangeProperty(dpy, c->w, A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&origin, 1);
 }
 
 static void leave_space(struct client *c, int gone) {
     long origin = c->origin, cur = get_card(root, A_CURDESK, 0);
     c->origin = -1;
+    if (!gone) XDeleteProperty(dpy, c->w, A_ORIGIN);
     if (!gone) move_to_desktop(c->w, origin);
     if (cur != origin) {
         mark_slide(origin, "back");
@@ -255,7 +257,12 @@ static void refresh_clients(void) {
             keep[k].w = list[i];
             keep[k].maxed = is_maxed(list[i]);
             keep[k].full = has_state(list[i], A_FULL);
-            keep[k].origin = -1;
+            keep[k].origin = (int)get_card(list[i], A_ORIGIN, -1);   /* kept on the window across restarts */
+            if (keep[k].origin >= 0 && !keep[k].full) {          /* left full screen while we were away */
+                move_to_desktop(list[i], keep[k].origin);
+                XDeleteProperty(dpy, list[i], A_ORIGIN);
+                keep[k].origin = -1;
+            }
         }
         update_geo(&keep[k]);
         k++;
@@ -457,6 +464,7 @@ int main(int argc, char **argv) {
     A_TYPE_DOCK = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DOCK", False);
     A_SLIDE = XInternAtom(dpy, "_MAC_SLIDE", False);
     A_MOTIF = XInternAtom(dpy, "_MOTIF_WM_HINTS", False);
+    A_ORIGIN = XInternAtom(dpy, "_MACOS_FULLSCREEN_ORIGIN", False);
 
     int xi_opcode = -1, ev, er, major = 2, minor = 2;   /* 2.1+: raw events even during grabs (title bar clicks) */
     if (green && XQueryExtension(dpy, "XInputExtension", &xi_opcode, &ev, &er)
@@ -524,7 +532,9 @@ int main(int argc, char **argv) {
                 struct client *c = find(e.xconfigure.window);
                 if (c) update_geo(c);
             } else if (e.type == PropertyNotify) {
-                if (e.xproperty.window == root && e.xproperty.atom == A_CLIENTS) refresh_clients();
+                if ((e.xproperty.window == root && e.xproperty.atom == A_CURDESK) || e.xproperty.atom == A_DESK)
+                    trim_at = now_ms() + SLIDE_CLEAR_MS;                 /* a desktop may have emptied */
+                if (e.xproperty.window == root && e.xproperty.atom == A_CLIENTS) { refresh_clients(); trim_at = now_ms() + SLIDE_CLEAR_MS; }
                 else if (e.xproperty.atom == A_STATE) on_state(e.xproperty.window);
                 else if (e.xproperty.atom == A_EXTENTS) { struct client *c = find(e.xproperty.window); if (c) update_geo(c); }
             } else if (e.type == Expose && e.xexpose.window == bar && e.xexpose.count == 0) {
