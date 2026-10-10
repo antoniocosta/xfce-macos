@@ -7,7 +7,8 @@ mapfile -t pkgs < <(packages_of "$HERE"); ensure_packages "${pkgs[@]}"
 # vpntray: a light top-bar panel for the VPN command-line tool (unofficial). Event-driven, no timers.
 command -v adguardvpn-cli >/dev/null || warn "adguardvpn-cli not found yet: install it, vpntray needs it"
 install_bin "$HERE/vpntray" "$HERE/vpntray_core.py" "$HERE/vpntray-askpass"
-mkdir -p "$BIN/icons" "$HOME/.local/share/icons/hicolor/scalable/status"
+mkd "$BIN/icons" "$HOME/.local/share/icons/hicolor/scalable/status"
+for f in "$HERE"/icons/*.svg; do track_file "$BIN/icons/$(basename "$f")"; track_file "$HOME/.local/share/icons/hicolor/scalable/status/$(basename "$f")"; done
 install -m 644 "$HERE"/icons/*.svg "$BIN/icons/"
 install -m 644 "$HERE"/icons/*.svg "$HOME/.local/share/icons/hicolor/scalable/status/"
 autostart_entry "vpntray" "$BIN/vpntray --background"

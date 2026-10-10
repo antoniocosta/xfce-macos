@@ -8,7 +8,7 @@ mapfile -t pkgs < <(packages_of "$HERE"); ensure_packages "${pkgs[@]}"
 install_bin "$HERE/net-badge"
 genmon="$(panel_plugin_id genmon)"
 [[ -n "$genmon" ]] || genmon="$(panel_new_plugin genmon)"
-mkdir -p "$HOME/.config/xfce4/panel"
+mkd "$HOME/.config/xfce4/panel"; track_file "$HOME/.config/xfce4/panel/genmon-$genmon.rc"
 printf 'Command=%s\nUseLabel=0\nText=\nUpdatePeriod=5000\nFont=Inter 10\n' "$BIN/net-badge" \
     > "$HOME/.config/xfce4/panel/genmon-$genmon.rc"
 panel_apply_order

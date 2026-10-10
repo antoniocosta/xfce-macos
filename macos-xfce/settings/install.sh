@@ -8,9 +8,10 @@ mapfile -t pkgs < <(packages_of "$HERE"); ensure_packages "${pkgs[@]}"
 #   Desktop & Dock (Dock, Hot Corners, desktop slide), Trackpad, Displays, Keyboard.
 # Each page applies changes as you make them; nothing runs after you close it.
 install_bin "$HERE/macos-settings" "$HERE/settings_core.py"
-apps="$HOME/.local/share/applications"; mkdir -p "$apps"
+apps="$HOME/.local/share/applications"; mkd "$apps"
 
 entry() {  # entry FILE NAME PANE ICON CATEGORY COMMENT
+    track_file "$apps/$1"
     printf '[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nIcon=%s\nExec=%s/macos-settings %s\nTerminal=false\nCategories=XFCE;GTK;Settings;DesktopSettings;X-XFCE-SettingsDialog;%s;\nKeywords=macos;mac;settings;\n' \
         "$2" "$6" "$4" "$BIN" "$3" "$5" > "$apps/$1"
 }

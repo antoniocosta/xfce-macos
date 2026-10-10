@@ -16,6 +16,11 @@
 #                                 typical laptop doesn't need (see README: "Trim"); sudo
 #   ./install.sh --english-only   also remove other languages' translations, help and manuals,
 #                                 and keep future installs English-only; sudo
+#   ./install.sh --list-changes   what the installers changed, as recorded for --restore
+#   ./install.sh --restore        undo everything that was recorded (asks first; --yes skips that);
+#                                 sudo for the system-wide parts
+#   ./install.sh --restore --packages   also remove the packages the installer added
+#   ./install.sh --restore --dry-run    show what would be undone, change nothing
 #   ./install.sh --help
 #
 # Safe to re-run: every step checks before it changes anything. Log out and back in after
@@ -27,6 +32,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 FILES="$HERE/files"
 . "$ROOT/lib/common.sh"
+. "$ROOT/lib/restore.sh"
 APPLE_CURSOR_TAG="v2.0.1"
 WHITESUR_ICONS_TAG="2026-09-10"   # only its battery icons are used
 
@@ -61,18 +67,24 @@ setup_packages() {
     lspci 2>/dev/null | grep -qiE '(VGA|3D).*Intel' && pkgs+=(i965-va-driver)   # video decoding on older Intel GPUs
     if [[ ! -f /etc/apt/sources.list.d/zquestz.list ]]; then
         info "Adding the Plank Reloaded package source (zquestz)"
+        track_sys /usr/share/keyrings/zquestz-archive-keyring.gpg; track_sys /etc/apt/sources.list.d/zquestz.list
         curl -fsSL https://zquestz.github.io/ppa/ubuntu/KEY.gpg | sudo gpg --dearmor --yes -o /usr/share/keyrings/zquestz-archive-keyring.gpg
         echo "deb [signed-by=/usr/share/keyrings/zquestz-archive-keyring.gpg] https://zquestz.github.io/ppa/ubuntu ./" \
             | sudo tee /etc/apt/sources.list.d/zquestz.list >/dev/null
     fi
-    dpkg-query -W plank 2>/dev/null | grep -q . && sudo apt-get remove -y plank   # conflicts with plank-reloaded
+    if dpkg-query -W plank 2>/dev/null | grep -q .; then   # conflicts with plank-reloaded
+        rec_once pkgrm plank
+        sudo apt-get remove -y plank
+    fi
     sudo apt-get update -q
+    record_new_packages "${pkgs[@]}" plank-reloaded
     sudo apt-get install -y "${pkgs[@]}" plank-reloaded
-    is_mac    && sudo systemctl enable --now mbpfan
-    is_laptop && sudo systemctl enable --now tlp
+    is_mac    && { unit_record system mbpfan.service; sudo systemctl enable --now mbpfan; }
+    is_laptop && { unit_record system tlp.service; sudo systemctl enable --now tlp; }
     # zram: compressed swap in RAM, used before the swap file; keeps a small-RAM machine responsive
     local zcfg=$'ALGO=zstd\nPERCENT=50\nPRIORITY=100'
     if [[ "$(cat /etc/default/zramswap 2>/dev/null)" != "$zcfg" ]]; then
+        track_sys /etc/default/zramswap
         printf '%s\n' "$zcfg" | sudo tee /etc/default/zramswap >/dev/null
         sudo systemctl restart zramswap && ok "zram swap on (zstd, up to half the RAM)"
     fi
@@ -90,7 +102,7 @@ setup_trim_system() {
              motd-news.timer; do
         systemctl list-unit-files "$u" --no-legend 2>/dev/null | grep -q . || continue
         [[ "$(systemctl is-enabled "$u" 2>/dev/null)" == disabled && "$(systemctl is-active "$u")" != active ]] \
-            || sudo systemctl disable --now "$u" 2>/dev/null || true
+            || { unit_record system "$u"; sudo systemctl disable --now "$u" 2>/dev/null || true; }
     done
     # mobile modem, firmware updates, GPU switching, colour profiles, Thunderbolt, a second syslog.
     # Masked, because D-Bus, udev or a socket would otherwise start them on demand.
@@ -100,13 +112,15 @@ setup_trim_system() {
     ls /sys/bus/iio/devices/iio:device*/in_accel_* >/dev/null 2>&1 || mask+=(iio-sensor-proxy.service)  # no rotation sensor
     for u in "${mask[@]}"; do
         systemctl list-unit-files "$u" --no-legend 2>/dev/null | grep -q . || continue
-        [[ "$(systemctl is-enabled "$u" 2>/dev/null)" == masked ]] || sudo systemctl mask --now "$u"
+        [[ "$(systemctl is-enabled "$u" 2>/dev/null)" == masked ]] || { unit_record system "$u"; sudo systemctl mask --now "$u"; }
     done
     # preinstalled apps: LibreOffice, Thunderbird, Calendar; unused themes (Yaru icons, Mint-L)
     local apps=()
     mapfile -t apps < <(dpkg-query -W -f='${Status} ${Package}\n' 'libreoffice*' 'thunderbird*' gnome-calendar \
         yaru-theme-icon mint-l-theme mint-l-icons 2>/dev/null | awk '$1=="install" && $3=="installed" {print $4}')
     if (( ${#apps[@]} )); then
+        local a; for a in "${apps[@]}"; do rec_once pkgrm "$a"; done
+        note_change "Removed packages (LibreOffice, Thunderbird, ...) come back with --restore --packages; their settings are gone."
         sudo apt-get purge -y "${apps[@]}" && sudo apt-get autoremove -y
     fi
     sudo apt-get clean   # downloaded copies of already-installed packages
@@ -119,22 +133,25 @@ setup_trim_user() {
     local u f
     # calendar/contacts back end (only GNOME Calendar used it) and its reminder popups
     for u in evolution-source-registry.service evolution-calendar-factory.service evolution-addressbook-factory.service; do
-        [[ "$(systemctl --user is-enabled "$u" 2>/dev/null)" == masked ]] || systemctl --user mask --now "$u" >/dev/null 2>&1 || true
+        [[ "$(systemctl --user is-enabled "$u" 2>/dev/null)" == masked ]] || { unit_record user "$u"; systemctl --user mask --now "$u" >/dev/null 2>&1 || true; }
     done
-    mkdir -p "$AUTOSTART"
+    mkd "$AUTOSTART"
     # tray icons: the printer applet (printing is off), System Reports (polls constantly; it's in
     # the menu), Toshy's (the keys work without it), and xiccd (colour profiles are off)
     for f in org.gnome.Evolution-alarm-notify print-applet mintreport xiccd; do
+        track_file "$AUTOSTART/$f.desktop"
         printf '[Desktop Entry]\nType=Application\nName=%s\nHidden=true\n' "$f" > "$AUTOSTART/$f.desktop"
     done
     [[ -f "$AUTOSTART/Toshy_Tray.desktop" ]] && ! grep -q '^Hidden=true' "$AUTOSTART/Toshy_Tray.desktop" \
-        && echo 'Hidden=true' >> "$AUTOSTART/Toshy_Tray.desktop"
+        && { track_file "$AUTOSTART/Toshy_Tray.desktop"; echo 'Hidden=true' >> "$AUTOSTART/Toshy_Tray.desktop"; }
     # GNOME Online Accounts (only the removed calendar/contacts used it): stop D-Bus starting it
     local dbus="$HOME/.local/share/dbus-1/services" n
-    mkdir -p "$dbus"
+    mkd "$dbus"
     for n in org.gnome.OnlineAccounts org.gnome.Identity; do
+        track_file "$dbus/$n.service"
         printf '[D-BUS Service]\nName=%s\nExec=/bin/false\n' "$n" > "$dbus/$n.service"
     done
+    for n in gvfs-goa-volume-monitor.service pk-debconf-helper.socket pk-debconf-helper.service; do unit_record user "$n"; done
     systemctl --user mask --now gvfs-goa-volume-monitor.service >/dev/null 2>&1 || true
     # PackageKit's debconf helper can busy-loop at 100% CPU for a minute after login; Mint's
     # own tools don't need it
@@ -162,12 +179,14 @@ path-exclude=/usr/share/man/??.*/*
 path-exclude=/usr/share/locale-langpack/*
 path-include=/usr/share/locale-langpack/en*'
     if [[ "$(cat "$cfg" 2>/dev/null)" != "$want" ]]; then
+        track_sys "$cfg"
         printf '%s\n' "$want" | sudo tee "$cfg" >/dev/null
         ok "Future installs and updates: English only"
     fi
     local before after
     before="$(du -sm /usr/share/locale /usr/share/help /usr/share/man 2>/dev/null | awk '{s+=$1} END{print s}')"
     # only language folders (xx, xx_YY, xx@variant, xx.charset), never English, C or man1..9
+    note_change "English only: the deleted translations, help pages and manuals cannot be restored; reinstall the packages (sudo apt install --reinstall ...) to get them back. --restore only stops future installs from dropping them."
     sudo find /usr/share/locale /usr/share/help -mindepth 1 -maxdepth 1 -type d \
         -regextype posix-extended -regex '.*/[a-z]{2,3}([_@.][A-Za-z0-9@._-]+)?' ! -name 'en*' -exec rm -rf {} +
     sudo find /usr/share/man -mindepth 1 -maxdepth 1 -type d \
@@ -184,6 +203,7 @@ setup_toshy() {
     section "Toshy"
     if [[ ! -f "$HOME/.config/toshy/toshy_config.py" ]]; then
         info "Installing Toshy (asks for sudo; accept the defaults)"
+        note_change "Toshy was installed by this installer and is left in place; remove it with its own uninstaller (setup_toshy.py uninstall in its repository). Its Cmd-key block and tray icons are undone."
         local tmp; tmp="$(mktemp -d)"
         curl -fsSL https://github.com/RedBearAK/toshy/archive/refs/heads/main.zip -o "$tmp/toshy.zip"
         unzip -q "$tmp/toshy.zip" -d "$tmp"
@@ -204,9 +224,9 @@ setup_toshy() {
     # A white, monochrome tray icon like the macOS menu bar's, made from Toshy's own icon
     # (the command-key outline, without the rainbow). A Toshy reinstall puts the rainbow back.
     local icons="$HOME/.config/toshy/assets" theme="$HOME/.local/share/icons/hicolor/scalable/apps" f n=0 white
-    mkdir -p "$icons/originals" "$theme"
+    mkd "$icons/originals" "$theme"
     for f in toshy_app_icon_rainbow.svg toshy_app_icon_rainbow_inverse.svg toshy_app_icon_rainbow_inverse_grayscale.svg; do
-        [[ -f "$icons/originals/$f" ]] || cp "$icons/$f" "$icons/originals/" 2>/dev/null || continue
+        [[ -f "$icons/originals/$f" ]] || { track_file "$icons/originals/$f"; cp "$icons/$f" "$icons/originals/" 2>/dev/null; } || continue
         white="$(python3 -I - "$icons/originals/toshy_app_icon_rainbow.svg" <<'PY'
 import re, sys
 svg = open(sys.argv[1]).read()
@@ -218,7 +238,7 @@ print('<?xml version="1.0" encoding="UTF-8"?>\n'
 PY
 )"
         local d; for d in "$icons" "$theme"; do
-            [[ "$(cat "$d/$f" 2>/dev/null)" == "$white" ]] || { printf '%s\n' "$white" > "$d/$f"; n=1; }
+            [[ "$(cat "$d/$f" 2>/dev/null)" == "$white" ]] || { track_file "$d/$f"; printf '%s\n' "$white" > "$d/$f"; n=1; }
         done
     done
     if (( n )); then
@@ -252,7 +272,8 @@ setup_theme() {
         info "Building the WhiteSur GTK theme"
         local tmp; tmp="$(mktemp -d)"
         git clone -q --depth=1 https://github.com/vinceliuice/WhiteSur-gtk-theme.git "$tmp/gtk"
-        (cd "$tmp/gtk" && ./install.sh -c dark -c light -l >/dev/null)
+        local g; for g in gtk.css gtk-dark.css assets; do track_file "$HOME/.config/gtk-4.0/$g"; done   # -l links the theme in
+        track_new "$HOME/.themes" bash -c 'cd "$1/gtk" && ./install.sh -c dark -c light -l >/dev/null' _ "$tmp"
         rm -rf "$tmp"
     fi
     if [[ ! -d "$HOME/.local/share/icons/macOS/cursors" ]]; then
@@ -261,15 +282,15 @@ setup_theme() {
         local tmp; tmp="$(mktemp -d)"
         curl -fsSL "https://github.com/ful1e5/apple_cursor/releases/download/$APPLE_CURSOR_TAG/macOS.tar.xz" -o "$tmp/c.tar.xz"
         tar -xJf "$tmp/c.tar.xz" -C "$tmp"
-        mkdir -p "$HOME/.local/share/icons"; cp -r "$tmp/macOS" "$HOME/.local/share/icons/macOS"
+        mkd "$HOME/.local/share/icons"; track_file "$HOME/.local/share/icons/macOS"; cp -r "$tmp/macOS" "$HOME/.local/share/icons/macOS"
         rm -rf "$tmp"
     fi
     # also the default for apps and windows that don't read the desktop's cursor setting
-    mkdir -p "$HOME/.icons/default"
+    mkd "$HOME/.icons/default"; track_file "$HOME/.icons/default/index.theme"
     printf '[Icon Theme]\nName=default\nInherits=macOS\n' > "$HOME/.icons/default/index.theme"
-    mkdir -p "$HOME/.local/share/plank/themes"
+    mkd "$HOME/.local/share/plank/themes"
     [[ -d "$HOME/.local/share/plank/themes/WhiteSur-Dark" ]] \
-        || cp -r "$HOME/.themes/WhiteSur-Dark-solid/plank" "$HOME/.local/share/plank/themes/WhiteSur-Dark"
+        || { track_file "$HOME/.local/share/plank/themes/WhiteSur-Dark"; cp -r "$HOME/.themes/WhiteSur-Dark-solid/plank" "$HOME/.local/share/plank/themes/WhiteSur-Dark"; }
 
     xfset xsettings /Net/ThemeName        string WhiteSur-Dark-solid
     setup_battery_icons
@@ -284,13 +305,13 @@ setup_theme() {
                                                             # their own title bar (Firefox, GTK4 apps)
     xfset xfwm4 /general/show_dock_shadow bool   false
     # Firefox and GTK4 apps follow the desktop portal's dark/light preference, not the theme
-    gsettings set org.x.apps.portal color-scheme 'prefer-dark'
-    gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
-    gsettings set org.gnome.desktop.interface gtk-theme 'WhiteSur-Dark-solid'
+    gset org.x.apps.portal color-scheme 'prefer-dark'
+    gset org.gnome.desktop.interface color-scheme 'prefer-dark'
+    gset org.gnome.desktop.interface gtk-theme 'WhiteSur-Dark-solid'
     # GTK4/libadwaita apps read these instead of Xfce's settings
-    gsettings set org.gnome.desktop.interface cursor-theme 'macOS'
-    gsettings set org.gnome.desktop.interface icon-theme 'Mint-Y-Blue-macbattery'
-    gsettings set org.gnome.desktop.interface font-name 'Inter 10'
+    gset org.gnome.desktop.interface cursor-theme 'macOS'
+    gset org.gnome.desktop.interface icon-theme 'Mint-Y-Blue-macbattery'
+    gset org.gnome.desktop.interface font-name 'Inter 10'
     ok "WhiteSur dark theme, macOS cursors, Inter font, Mint-Y icons (macOS battery), dark mode"
 }
 
@@ -306,7 +327,7 @@ setup_battery_icons() {
     mkdir -p "$tmp/out"; (cd "$tmp/src" && ./install.sh -d "$tmp/out" >/dev/null 2>&1)
     local st="$tmp/out/WhiteSur/status"
     [[ -d "$st/16" ]] || { rm -rf "$tmp"; warn "WhiteSur icons unavailable; keeping Mint's battery"; return 0; }
-    rm -rf "$dest"; mkdir -p "$dest/status/scalable" "$dest/status/symbolic"
+    track_file "$dest"; rm -rf "$dest"; mkdir -p "$dest/status/scalable" "$dest/status/symbolic"
     for s in 16 22 32; do       # the 16 px drawings first; the larger sizes only fill gaps
         for f in "$st/$s"/battery-*.svg; do
             [[ -e "$dest/status/scalable/$(basename "$f")" ]] || cp -L "$f" "$dest/status/scalable/"
@@ -356,7 +377,7 @@ setup_window_manager() {
             xfset xfwm4 /general/workspace_count int 1
             ok "One desktop, like macOS (add more in Mission Control)"
         fi
-        mkdir -p "$(dirname "$mark")"; touch "$mark"
+        mkd "$(dirname "$mark")"; track_file "$mark"; touch "$mark"
     fi
     xfset xfwm4 /general/tile_on_move     bool false   # no half-screen snapping at the edges
     xfset xfwm4 /general/cycle_workspaces bool true    # Cmd+Tab lists windows of every desktop
@@ -416,9 +437,9 @@ setup_panel() {
     xfset xfce4-power-manager /xfce4-power-manager/show-tray-icon bool false
     # notifications at the top right, like macOS; no "connected" or "networks available" pop-ups
     xfset xfce4-notifyd /notify-location string top-right
-    gsettings set org.gnome.nm-applet disable-connected-notifications true 2>/dev/null || true
-    gsettings set org.gnome.nm-applet suppress-wireless-networks-available true 2>/dev/null || true
-    gsettings set com.linuxmint.updates hide-systray true 2>/dev/null || true   # update shield only when there are updates
+    gset org.gnome.nm-applet disable-connected-notifications true 2>/dev/null || true
+    gset org.gnome.nm-applet suppress-wireless-networks-available true 2>/dev/null || true
+    gset com.linuxmint.updates hide-systray true 2>/dev/null || true   # update shield only when there are updates
 
     # Global menu: loaded through GTK_MODULES at login. (Switching it on live through
     # xsettings crashes running tray apps, so it only takes effect after logging in again.)
@@ -437,7 +458,7 @@ export UBUNTU_MENUPROXY=1' >/dev/null
 setup_shortcuts() {
     section "Keyboard shortcuts"
     local k="xfce4-keyboard-shortcuts" shots="$HOME/Pictures/Screenshots"
-    mkdir -p "$shots"
+    mkd "$shots"
     xfset $k "/commands/custom/<Super>space"  string "rofi -show drun"                                        # Cmd+Space
     xfset $k "/commands/custom/Print"         string "xfce4-screenshooter -f -s $shots"                       # Cmd+Shift+3
     xfset $k "/commands/custom/<Alt>Print"    string "xfce4-screenshooter -r -s $shots"                       # Cmd+Shift+4
@@ -448,6 +469,7 @@ setup_shortcuts() {
     xfset $k "/commands/custom/XF86LaunchA"   string "$BIN/mission-control"                                   # F3
     xfset $k "/commands/custom/XF86LaunchB"   string "rofi -show drun -theme $HOME/.config/rofi/launchpad.rasi"  # F4
     # Ctrl alone must not open the Mint menu (it arrives as a lone Super key)
+    xf_record $k "/commands/custom/Super_L" string
     xfconf-query -c $k -p "/commands/custom/Super_L" -r 2>/dev/null || true
     ok "Spotlight, screenshots, desktops, Mission Control, Launchpad"
 }
@@ -480,7 +502,10 @@ setup_helpers() {
     section "Mission Control, gestures, utilities"
     # retired: skippy-xd, the previous Mission Control (replaced by mission-control/)
     pkill -u "$USER" -x skippy-xd 2>/dev/null || true
-    rm -rf "$BIN/skippy-xd" "$SRC/skippy-xd-stable" "$HOME/.config/skippy-xd"
+    if [[ -e "$BIN/skippy-xd" || -e "$SRC/skippy-xd-stable" || -e "$HOME/.config/skippy-xd" ]]; then
+        note_change "The old skippy-xd (Mission Control before mission-control/) was deleted; it is not restored."
+        rm -rf "$BIN/skippy-xd" "$SRC/skippy-xd-stable" "$HOME/.config/skippy-xd"
+    fi
 
     local f
     for f in .config/rofi/config.rasi .config/rofi/launchpad.rasi .config/touchegg/touchegg.conf; do
@@ -489,9 +514,10 @@ setup_helpers() {
     # Touchégg's client can crash when it starts at login and then stays dead: run it through a
     # wrapper that restarts it (same name as the system autostart entry, so it replaces it)
     install_bin "$HERE/touchegg-client"
-    mkdir -p "$AUTOSTART"
+    mkd "$AUTOSTART"; track_file "$AUTOSTART/touchegg.desktop"
     printf '[Desktop Entry]\nType=Application\nName=Touchégg (gesture client, restarted if it exits)\nExec=%s\nX-GNOME-Autostart-enabled=true\n' \
         "$BIN/touchegg-client" > "$AUTOSTART/touchegg.desktop"
+    track_proc touchegg-client touchegg
     (setsid "$BIN/touchegg-client" >/dev/null 2>&1 &)   # replaces any running client; reloads the config
 
     local u
@@ -507,7 +533,7 @@ setup_helpers() {
 setup_dock() {
     section "Dock"
     local dir="$HOME/.config/plank/dock1/launchers" f item items=()
-    mkdir -p "$dir"
+    mkd "$dir"
     for f in "$FILES"/.config/plank/dock1/launchers/*.dockitem; do
         [[ -f "$dir/$(basename "$f")" ]] || install_file "$f" "$dir/$(basename "$f")" >/dev/null
     done
@@ -519,12 +545,12 @@ setup_dock() {
                 && items+=("'$item'") || warn "Dock: skipped $item ($target is not on this machine)"
         done
         sed "s|^dock-items=.*|dock-items=[$(IFS=,; echo "${items[*]}" | sed "s/,/, /g")]|" "$FILES/plank-dock1.dconf" \
-            | dconf load /net/launchpad/plank/docks/dock1/
+            | dconf_load /net/launchpad/plank/docks/dock1/
     else
-        grep -v '^dock-items=' "$FILES/plank-dock1.dconf" | dconf load /net/launchpad/plank/docks/dock1/
+        grep -v '^dock-items=' "$FILES/plank-dock1.dconf" | dconf_load /net/launchpad/plank/docks/dock1/
     fi
     autostart_entry "Plank" "plank"
-    pgrep -u "$USER" -x plank >/dev/null || (setsid plank >/dev/null 2>&1 &)
+    pgrep -u "$USER" -x plank >/dev/null || { track_proc plank; (setsid plank >/dev/null 2>&1 &); }
     ok "Dock set up"
 }
 
@@ -590,9 +616,14 @@ user_pref("browser.newtabpage.activity-stream.feeds.section.topstories", false);
 usage() { sed -n '/^# Usage:/,/^# =====/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
 
 main() {
-    local user_only=0 trim=0 english=0 a
+    local user_only=0 trim=0 english=0 a restore=0 list=0 dry=0 pk=() yes=()
     for a in "$@"; do
         case "$a" in
+            --restore) restore=1 ;;
+            --list-changes) list=1 ;;
+            --dry-run) dry=1 ;;
+            --packages) pk=(--packages) ;;
+            --yes|-y) yes=(--yes) ;;
             --user) user_only=1 ;;
             --trim) trim=1 ;;
             --english-only) english=1 ;;
@@ -600,6 +631,12 @@ main() {
             *) warn "Unknown option: $a"; usage; exit 1 ;;
         esac
     done
+    if (( list )); then lu_restore list "${pk[@]}"; exit; fi
+    if (( restore )); then
+        if (( dry )); then lu_restore dry "${pk[@]}"; else lu_restore run "${pk[@]}" "${yes[@]}"; fi
+        exit
+    fi
+    (( dry )) && { warn "--dry-run goes with --restore"; usage; exit 1; }
     require_mint_xfce
     if (( ! user_only )); then
         setup_packages

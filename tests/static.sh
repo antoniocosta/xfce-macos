@@ -5,7 +5,7 @@ cd "$ROOT"
 
 t_begin "Shell scripts parse"
 mapfile -t shells < <(git ls-files | while read -r f; do
-    [[ -f "$f" ]] && head -1 "$f" | grep -qE '^#!.*(bash|/sh)' && echo "$f"; done; echo lib/common.sh; echo tests/lib.sh)
+    [[ -f "$f" ]] && head -1 "$f" | grep -qE '^#!.*(bash|/sh)' && echo "$f"; done; echo lib/common.sh; echo lib/restore.sh; echo tests/lib.sh)
 for f in "${shells[@]}"; do check "$f" bash -n "$f"; done
 
 if command -v shellcheck >/dev/null; then

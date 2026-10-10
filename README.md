@@ -64,6 +64,8 @@ Options, all off by default:
 ./macos-xfce/install.sh --trim           # also switch off services and remove apps a laptop rarely needs (see Trim)
 ./macos-xfce/install.sh --english-only   # also remove other languages' translations, help and manuals
 ./macos-xfce/install.sh --user           # skip packages (already installed): no sudo
+./macos-xfce/install.sh --restore        # undo what the installers changed (see Restore)
+./macos-xfce/install.sh --list-changes   # show what they changed
 ```
 
 One part on its own: its `install.sh`, for example `./macos-xfce/hotcorner/install.sh` or
@@ -181,6 +183,8 @@ translations back.
 - A Toshy reinstall brings its rainbow tray icon back; re-run the installer.
 
 ### Undo
+
+All of it at once: `./macos-xfce/install.sh --restore` (see [Restore](#restore)). By hand:
 
 - Theme, menu bar, shortcuts: Settings → Appearance / Window Manager / Panel / Keyboard.
 - Desktop slide: `desktop-slide off`.
@@ -387,12 +391,56 @@ root, so vpntray points `SUDO_ASKPASS` at a small password dialog (zenity). No s
 
 ---
 
+## Restore
+
+The installers write down, the first time they change something, how to put it back. The record is
+`${XDG_STATE_HOME:-~/.local/state}/linux-utilities/` (a `changes` file and a `backup/` folder). Each
+thing is recorded once only, so a restore returns to what the machine was **before the first
+install**; re-running an installer adds nothing. Every part's own `install.sh` records into the same
+place.
+
+```
+./macos-xfce/install.sh --list-changes             # what is recorded (and what cannot be undone)
+./macos-xfce/install.sh --restore --dry-run        # print what would be undone, change nothing
+./macos-xfce/install.sh --restore                  # undo it; asks first (--yes skips the question)
+./macos-xfce/install.sh --restore --packages       # also apt-remove the packages the installer added
+```
+
+What a restore undoes:
+
+- Xfce settings (xfconf) and GNOME/dconf keys: the previous value is set back, or the setting is
+  removed / reset to its default if it did not exist before. The dock's settings too.
+- Marked `linux-utilities` blocks (`gtk.css`, `~/.xsessionrc`, Firefox's `user.js`, Toshy's config):
+  removed; a file the installer created and that is now empty is deleted.
+- Files and folders the installers created (programs, themes, cursors, icons, autostart entries,
+  configs, dock items): deleted. Ones they replaced: the original is put back from the backup.
+- Programs the installers started (hot corners, Mission Control, full screen, picom, volume click,
+  disk label, auto brightness, gesture client, dock) are stopped, by exact process name.
+- System-wide parts (asks for sudo once): the zram config, the English-only dpkg setting, the dock's
+  apt source and key, and the `--trim` services (enabled or disabled again as they were).
+- With `--packages`: packages the installer newly installed are removed, and packages it removed
+  (the old `plank`, what `--trim` purged) are installed again. Without it packages stay.
+
+What it cannot undo:
+
+- English-only: the deleted translations, help and manuals only come back by reinstalling the
+  packages (`sudo apt install --reinstall ...`). A restore only stops future installs dropping them.
+- Settings of purged apps (`--trim`), and the old skippy-xd, which the installer deleted.
+- Toshy itself, when the installer installed it: remove it with Toshy's own uninstaller.
+- Anything installed by a version before this feature existed is only partly recorded: files that
+  match what the installer ships are removed, settings that were already changed are not.
+- Running programs and tray icons the `--trim` step closed come back at the next login.
+
+A restore that finished removes the record, so a later install starts a fresh one; if a step fails
+the record is kept and the restore can be run again. It is safe to run twice. Log out and back in
+afterwards.
+
 ## Tests
 
 ```
 tests/run.sh             # everything (live tests need: sudo apt install xvfb)
 tests/run.sh static      # scripts parse, C builds with -Werror, configs valid, nothing private, README complete
-tests/run.sh unit        # the installers' helpers, in a temporary home
+tests/run.sh unit        # the installers' helpers and the change record / restore, in a temporary home
 tests/run.sh live [NAME] # the behaviour itself
 ```
 
