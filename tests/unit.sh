@@ -39,4 +39,22 @@ check "file named after the entry" grep -q '^Exec=/x/hot-corners$' "$HOME/.confi
 t_begin "vpntray: parsers and the provider adapter (against a fake CLI)"
 check "unit tests pass" python3 "$ROOT/extras/vpntray/test_vpntray.py"
 
+t_begin "settings pages: the logic (fake dconf/xinput, no real settings)"
+check "unit tests pass" python3 "$ROOT/macos-xfce/settings/test_settings.py"
+
+t_begin "hot-corners: reads the Hot Corners settings"
+mkdir -p "$HOME/.local/bin" "$HOME/.config/linux-utilities"
+printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/args"\n' "$tmp" > "$HOME/.local/bin/hotcorner"; chmod +x "$HOME/.local/bin/hotcorner"
+run_hc() { rm -f "$tmp/args"; (cd "$tmp" && HOT_CORNERS_TEST=1 timeout 1 bash "$ROOT/macos-xfce/hotcorner/hot-corners" >/dev/null 2>&1); tr '\n' ' ' < "$tmp/args" 2>/dev/null; }
+rm -f "$HOME/.config/linux-utilities/hot-corners.conf"
+eq "no settings saved: top right shows the desktop, bottom right Mission Control" "$(run_hc)" "-d 100 tr $HOME/.local/bin/show-desktop br $HOME/.local/bin/mission-control "
+printf 'tl = launchpad\ntr = none\nbl = lock-screen\nbr = display-sleep\n' > "$HOME/.config/linux-utilities/hot-corners.conf"
+got="$(run_hc)"
+check "top left is Launchpad"      bash -c "[[ '$got' == *'tl rofi -show drun'* ]]"
+check "top right is off"           bash -c "[[ '$got' != *' tr '* ]]"
+check "bottom left locks"          bash -c "[[ '$got' == *'bl xflock4'* ]]"
+check "bottom right sleeps the display" bash -c "[[ '$got' == *'br sleep 0.5; xset dpms force off'* ]]"
+printf 'tl = none\ntr = none\nbl = none\nbr = none\n' > "$HOME/.config/linux-utilities/hot-corners.conf"
+eq "every corner off: hotcorner isn't started" "$(run_hc)" ""
+
 t_summary

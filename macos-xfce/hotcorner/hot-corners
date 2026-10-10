@@ -1,12 +1,41 @@
 #!/bin/bash
-# macOS-style hot corners: top-right = show desktop, bottom-right = Mission Control;
-# (dragging windows across desktops is xfwm4's own wrap_windows)
-# Restarts hotcorner if it ever stops.
-for p in $(pgrep -u "$USER" -x hot-corners); do [ "$p" != $$ ] && kill "$p"; done
-pkill -u "$USER" -x hotcorner 2>/dev/null
+# macOS-style hot corners, set up in Desktop & Dock > Hot Corners (settings page). Reads
+# ~/.config/linux-utilities/hot-corners.conf; with none saved: top right = show desktop,
+# bottom right = Mission Control. (Dragging windows across desktops is xfwm4's own wrap_windows.)
+# Restarts hotcorner if it ever stops. Run again after changing the settings: it replaces itself.
+if [ -z "$HOT_CORNERS_TEST" ]; then      # (the tests set it, so they never stop your own corners)
+  for p in $(pgrep -u "$USER" -x hot-corners); do [ "$p" != $$ ] && kill "$p"; done
+  pkill -u "$USER" -x hotcorner 2>/dev/null
+fi
+BIN="$HOME/.local/bin"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/linux-utilities/hot-corners.conf"
+
+# what a corner does (the actions of the settings page)
+command_for() {
+    case "$1" in
+        mission-control) echo "$BIN/mission-control" ;;
+        desktop)         echo "$BIN/show-desktop" ;;
+        launchpad)       echo "rofi -show drun -theme $HOME/.config/rofi/launchpad.rasi" ;;
+        lock-screen)     echo "xflock4" ;;
+        display-sleep)   echo "sleep 0.5; xset dpms force off" ;;
+        *)               echo "" ;;
+    esac
+}
+action_of() {  # action_of CORNER DEFAULT
+    local v
+    v=$(sed -n "s/^$1[[:space:]]*=[[:space:]]*//p" "$CONF" 2>/dev/null | head -1 | tr -d '[:space:]')
+    echo "${v:-$2}"
+}
+
+args=()
+for pair in tl:none tr:desktop bl:none br:mission-control; do
+    corner=${pair%%:*}
+    cmd=$(command_for "$(action_of "$corner" "${pair##*:}")")
+    [ -n "$cmd" ] && args+=("$corner" "$cmd")
+done
+[ ${#args[@]} -eq 0 ] && exit 0      # every corner is off: nothing to run
+
 while true; do
-  "$HOME/.local/bin/hotcorner" -d 100 \
-    tr "$HOME/.local/bin/show-desktop" \
-    br "$HOME/.local/bin/mission-control"
+  "$BIN/hotcorner" -d 100 "${args[@]}"
   sleep 2
 done

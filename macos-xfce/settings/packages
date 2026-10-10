@@ -1,0 +1,2 @@
+python3-gi gir1.2-gtk-3.0   # the pages
+xinput x11-xserver-utils    # trackpad settings, display sleep (hot corner)
