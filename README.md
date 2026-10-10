@@ -35,7 +35,7 @@ lib/common.sh        helpers shared by the installers
 | [disk-label](#disk-label) | A "Macintosh HD / 91 GB free" icon on the desktop, with live free space. |
 | [auto-brightness](#auto-brightness) | Screen and keyboard backlight follow the room light, like a MacBook (needs its light sensor). |
 | [mission-control](#mission-control) | Mission Control: every desktop in a Spaces bar on top, the current desktop's windows below; drag windows between desktops, + and × to add and remove desktops. |
-| [settings](#settings) | Settings Manager pages named like macOS's System Settings: **Desktop & Dock** (Dock size, magnification, position, auto-hide, **Hot Corners…**, sliding between desktops), **Trackpad**, **Displays** and **Keyboard Brightness** (automatic brightness). |
+| [settings](#settings) | Settings Manager pages named like macOS's System Settings: **Desktop & Dock** (Dock size, magnification, position, auto-hide, **Hot Corners**, sliding between desktops), **Trackpad**, **Displays** and **Keyboard Brightness** (automatic brightness). |
 | [fullscreen](#fullscreen) | Full screen like macOS: the green button and Cmd+Ctrl+F go full screen in a Space of its own; at the top edge the menu bar and title bar slide in. |
 
 Tested on Linux Mint 22.3 Xfce (X11) on a MacBook Air mid 2012 (Intel HD 4000, 8 GB).
@@ -287,7 +287,7 @@ as you make them. A page is just a window: nothing runs after you close it.
 | Page | What's there |
 |---|---|
 | **Desktop & Dock** | Dock **Size**, **Magnification** (and its size), **Position on screen** (Left, Bottom, Right), **Automatically hide and show the Dock**, **Slide between desktops**, and the **Hot Corners…** button |
-| **Hot Corners…** | A pop-up per screen corner: Mission Control, Desktop, Launchpad, Lock Screen, Put Display to Sleep, or nothing. Saved in `~/.config/xfce-macos/hot-corners.conf`; the corners restart on OK |
+| **Hot Corners** (on the Desktop & Dock page) | A choice per screen corner, applied as you change it: Mission Control, Desktop, Launchpad, Lock Screen, Put Display to Sleep, or nothing. Saved in `~/.config/xfce-macos/hot-corners.conf`; the corners restart a moment after you change one |
 | **Trackpad** | **Tap to click**, **Natural scrolling** (as on a Mac), **Tracking speed**, **Scrolling speed** (how far your fingers travel per scroll step; Xfce has no window for it, so it is saved and re-applied at every login) |
 | **Displays** | **Automatically adjust brightness**, only on computers with an ambient light sensor |
 | **Keyboard Brightness** | **Adjust keyboard brightness in low light**, only with a keyboard backlight |
