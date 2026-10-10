@@ -18,7 +18,8 @@ macos-xfce/          the core: ./macos-xfce/install.sh sets up all of it
   volume-feedback/   ├ the volume click
   disk-label/        ├ "Macintosh HD" with free space on the desktop
   auto-brightness/   ├ automatic screen and keyboard brightness
-  ssh-keyring/       └ SSH key unlocked at login, like the Keychain
+  ssh-keyring/       ├ SSH key unlocked at login, like the Keychain
+  fullscreen/        └ full screen: green button, its own Space, menu bar at the top edge
 extras/
   net-badge/         network latency in the menu bar
 lib/common.sh        helpers shared by the installers
@@ -32,6 +33,7 @@ lib/common.sh        helpers shared by the installers
 | [volume-feedback](#volume-feedback) | The click when you change the volume. |
 | [disk-label](#disk-label) | A "Macintosh HD / 91 GB free" icon on the desktop, with live free space. |
 | [auto-brightness](#auto-brightness) | Screen and keyboard backlight follow the room light, like a MacBook (needs its light sensor). |
+| [fullscreen](#fullscreen) | Full screen like macOS: the green button and Cmd+Ctrl+F go full screen in a Space of its own; at the top edge the menu bar and title bar slide in. |
 | [ssh-keyring](#ssh-keyring) | Unlocks your SSH key at login from the login keyring, like the macOS Keychain (only when you have a key). |
 | **Extras** | |
 | [net-badge](#net-badge) | Network latency in the menu bar ("● 24 ms"), with a popover. |
@@ -73,6 +75,7 @@ Measured on the 2012 MacBook Air over a 12-hour session (resident memory, averag
 | Process | Memory | CPU |
 |---|---|---|
 | hotcorner | 3 MB | 0.01 % |
+| fullscreen | 4 MB | 0 (sleeps until a window changes; watches the pointer only in full screen) |
 | volume-feedback | 11 MB | 0 (sleeps until the volume changes) |
 | disk-label | 4 MB | 0 (checks once a minute) |
 | skippy-xd (Mission Control, waiting) | 11 MB | 0 |
@@ -235,6 +238,36 @@ yourself, it keeps that offset, like macOS. Brightness is set through logind, so
 needed. Turn screen or keyboard on and off in Settings Manager → **Auto Brightness**.
 
 Installs only where there is a light sensor.
+
+---
+
+## fullscreen
+
+macOS full screen, for every app:
+
+- **The green button goes full screen** instead of maximizing, for Xfce's title bars and for apps
+  that draw their own (Firefox). **Cmd+Ctrl+F** toggles it too, and apps' own full screen (F11,
+  a video's full-screen button) behaves the same.
+- **Its own Space.** The window moves to a new desktop after the last one and the screen slides
+  to it; Ctrl+arrows, the swipes and Mission Control reach it like any desktop. Leaving full
+  screen (or closing the window) slides back to the window's own desktop and removes the Space.
+- **The top edge.** Rest the pointer at the top: the menu bar slides in, with the app's own
+  menus, and the window's title bar below it. Red closes the window, green leaves full screen,
+  yellow is greyed out (as on macOS). Move away and they hide again; an open menu keeps them.
+
+How it stays light: one small C program that sleeps until a window changes. Clicks come in as
+XInput2 raw events (no grab, nothing taken from other apps); a click in a window's button area
+followed by that window's maximize state changing is the green button. The pointer is only
+watched while the active window is full screen. Desktops are only added after the last one and
+removed from the end when empty, never renumbered (renumbering desktops under a window that's
+being dragged is what breaks things).
+
+Xfce keeps a focused full-screen window above the panel, so while the title bar shows, it takes
+the focus (carrying the app's menu properties, so the global menu stays the app's); the window
+is alone on its Space, so nothing else comes up in between.
+
+`fullscreen -G` leaves the green button alone, `-P` turns off the top edge, `-S` keeps
+full-screen windows on their own desktop (no Spaces).
 
 ---
 

@@ -15,3 +15,10 @@ keymap("macos-xfce - tab switching", {
     not ctx_app_is_terminal and
     not ctx_app_is_remote
 )
+
+keymap("macos-xfce - full screen", {
+    C("RC-Super-f"):            C("Alt-F11"),                   # Cmd+Ctrl+F: full screen (Xfce's own toggle)
+    C("LC-RC-f"):               C("Alt-F11"),                   # the same in terminals, where Ctrl stays Ctrl
+}, when = lambda ctx:
+    cnfg.screen_has_focus
+)

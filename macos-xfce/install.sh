@@ -54,7 +54,7 @@ setup_packages() {
         zram-tools                                   # compressed swap in RAM
     )
     local d p
-    for d in hotcorner desktop-slide volume-feedback disk-label auto-brightness ssh-keyring; do
+    for d in hotcorner desktop-slide volume-feedback disk-label auto-brightness ssh-keyring fullscreen; do
         while read -r p; do pkgs+=("$p"); done < <(packages_of "$HERE/$d")
     done
     is_mac    && pkgs+=(mbpfan)                      # MacBook fan control
@@ -477,7 +477,7 @@ setup_helpers() {
     (setsid "$BIN/touchegg-client" >/dev/null 2>&1 &)   # replaces any running client; reloads the config
 
     local u
-    for u in hotcorner desktop-slide volume-feedback auto-brightness; do "$HERE/$u/install.sh"; done
+    for u in hotcorner desktop-slide volume-feedback auto-brightness fullscreen; do "$HERE/$u/install.sh"; done
     # the SSH key unlocked at login from the login keyring, like the macOS Keychain
     [[ -f "$HOME/.ssh/id_ed25519" ]] && "$HERE/ssh-keyring/install.sh"
     return 0

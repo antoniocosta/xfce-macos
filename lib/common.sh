@@ -73,13 +73,13 @@ restart_bg() {  # restart_bg PROCESS-NAME COMMAND...  (by exact process name, ne
     (setsid "$@" >/dev/null 2>&1 &)
 }
 
-build_c() {  # build_c FILE.c NAME: compile to ~/.local/bin/NAME when the source changed
-    local src="$1" name="$2"
+build_c() {  # build_c FILE.c NAME [LIB...]: compile to ~/.local/bin/NAME when the source changed
+    local src="$1" name="$2"; shift 2
     mkdir -p "$SRC/$name" "$BIN"
     if ! cmp -s "$src" "$SRC/$name/$name.c" || [[ ! -x "$BIN/$name" ]]; then
         need gcc gcc
         cp "$src" "$SRC/$name/$name.c"
-        gcc -O2 -Wall -o "$BIN/$name" "$SRC/$name/$name.c" -lX11 || die "Build failed (sudo apt install gcc libx11-dev)"
+        gcc -O2 -Wall -o "$BIN/$name" "$SRC/$name/$name.c" -lX11 "$@" || die "Build of $name failed (missing -dev packages?)"
         ok "Built $name"
     fi
 }
