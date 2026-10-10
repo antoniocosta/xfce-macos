@@ -76,7 +76,7 @@ class App(Gtk.Application):
             icon_dir)
         self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
         menu = Gtk.Menu()
-        self.mi_state = Gtk.MenuItem(label="VPN: ...")
+        self.mi_state = Gtk.MenuItem(label=f"{self.vpn.name}: ...")
         self.mi_state.set_sensitive(False)
         self.mi_open = Gtk.MenuItem(label="Open panel")
         self.mi_open.connect("activate", lambda *_: self.show_panel())
@@ -93,9 +93,9 @@ class App(Gtk.Application):
     def update_tray(self):
         on = bool(self.status and self.status.connected)
         self.indicator.set_icon_full("vpntray-on-symbolic" if on else "vpntray-off-symbolic",
-                                     "VPN on" if on else "VPN off")
-        self.mi_state.set_label("Connected" + (f": {self.status.location}" if self.status.location else "")
-                                if on else "Disconnected")
+                                     f"{self.vpn.name} on" if on else f"{self.vpn.name} off")
+        self.mi_state.set_label(f"{self.vpn.name}: connected" + (f" ({self.status.location})" if self.status.location else "")
+                                if on else f"{self.vpn.name}: disconnected")
         self.mi_toggle.set_label("Disconnect" if on else "Connect")
         self.mi_toggle.set_sensitive(not self.busy and bool(self.account is None or self.account.logged_in))
 
@@ -105,7 +105,7 @@ class App(Gtk.Application):
         css.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css,
                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        w = self.win = Gtk.Window(title="vpntray")
+        w = self.win = Gtk.Window(title=self.vpn.name)
         w.set_decorated(False)
         w.set_resizable(False)
         w.set_skip_taskbar_hint(True)
@@ -142,6 +142,9 @@ class App(Gtk.Application):
 
     def build_main(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        brand = Gtk.Label(label=self.vpn.name, xalign=0)         # which VPN this panel is for
+        brand.get_style_context().add_class("vt-dim")
+        box.pack_start(brand, False, False, 0)
         head = Gtk.Box(spacing=10)
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.lbl_status = Gtk.Label(label="Checking...", xalign=0)
@@ -204,7 +207,7 @@ class App(Gtk.Application):
 
     def build_login(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        t = Gtk.Label(label="Log in", xalign=0)
+        t = Gtk.Label(label=f"Log in to {self.vpn.name}", xalign=0)
         t.get_style_context().add_class("vt-status")
         self.in_email = Gtk.Entry(placeholder_text="Email")
         self.in_pass = Gtk.Entry(placeholder_text="Password", visibility=False)
