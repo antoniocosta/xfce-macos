@@ -1,0 +1,95 @@
+#!/usr/bin/python3 -I
+"""Unlock the SSH key at login from the login keyring, like macOS's Keychain.
+
+  ssh-keyring store    ask for the key's passphrase once, check it, save it in the login keyring
+  ssh-keyring unlock   (at login) add the key to the session's ssh-agent using the saved passphrase
+  ssh-keyring forget   remove the saved passphrase
+  ssh-keyring askpass  (internal) print the passphrase for ssh-add's SSH_ASKPASS
+
+The key file stays encrypted on disk; the passphrase is protected by the login keyring, which
+opens with your login password. So SSH (and anything that uses it in the background) works
+right after login. Another key: set SSH_KEYRING_KEY=/path/to/key.
+"""
+import getpass
+import os
+import subprocess
+import sys
+import time
+
+import gi
+gi.require_version("Secret", "1")
+from gi.repository import Secret  # noqa: E402
+
+KEY = os.path.expanduser(os.environ.get("SSH_KEYRING_KEY", "~/.ssh/id_ed25519"))
+SCHEMA = Secret.Schema.new("org.local.ssh-keyring", Secret.SchemaFlags.NONE,
+                           {"key": Secret.SchemaAttributeType.STRING})
+ATTRS = {"key": KEY}
+
+
+def lookup():
+    return Secret.password_lookup_sync(SCHEMA, ATTRS, None)
+
+
+def store():
+    pw = getpass.getpass(f"Passphrase for {KEY}: ")
+    Secret.password_store_sync(SCHEMA, ATTRS, Secret.COLLECTION_DEFAULT,
+                               f"SSH key passphrase ({os.path.basename(KEY)})", pw, None)
+    # check it by unlocking the key (never by putting the passphrase on a command line)
+    if add_key() != 0:
+        Secret.password_clear_sync(SCHEMA, ATTRS, None)
+        sys.exit("That passphrase doesn't open the key; nothing saved.")
+    print("Saved in the login keyring, and the key is unlocked.")
+
+
+def session_agent():
+    """The login session's ssh-agent socket, even when this runs inside a program (a terminal
+    multiplexer, say) whose SSH_AUTH_SOCK points at its own forwarding socket."""
+    sock = os.environ.get("SSH_AUTH_SOCK", "")
+    if sock.startswith("/tmp/ssh-"):
+        return sock
+    import glob
+    mine = [s for s in glob.glob("/tmp/ssh-*/agent.*") if os.stat(s).st_uid == os.getuid()]
+    return max(mine, key=os.path.getmtime) if mine else sock
+
+
+def add_key():
+    env = dict(os.environ, SSH_ASKPASS=os.path.abspath(sys.argv[0]), SSH_ASKPASS_REQUIRE="force",
+               SSH_KEYRING_ASKPASS="1", SSH_AUTH_SOCK=session_agent())
+    r = subprocess.run(["ssh-add", KEY], env=env, stdin=subprocess.DEVNULL,
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        print((r.stderr or r.stdout).strip(), file=sys.stderr)
+    return r.returncode
+
+
+def unlock():
+    for _ in range(30):              # at login the keyring may need a moment
+        try:
+            pw = lookup()
+            break
+        except Exception:
+            time.sleep(1)
+    else:
+        sys.exit("ssh-keyring: login keyring not available")
+    if pw is None:
+        sys.exit("ssh-keyring: no passphrase saved; run `ssh-keyring store` once")
+    sys.exit(add_key())
+
+
+if __name__ == "__main__":
+    # ssh-add calls us back as its askpass helper (with a prompt as the argument)
+    if os.environ.get("SSH_KEYRING_ASKPASS") == "1":
+        print(lookup() or "")
+        sys.exit(0)
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "unlock"
+    if cmd == "store":
+        store()
+    elif cmd == "unlock":
+        unlock()
+    elif cmd == "forget":
+        Secret.password_clear_sync(SCHEMA, ATTRS, None)
+        print("Forgotten.")
+    elif cmd == "askpass":
+        print(lookup() or "")
+    else:
+        sys.exit(__doc__)

@@ -1,0 +1,16 @@
+#!/bin/bash
+# desktop-slide on|off|status - the macOS-like desktop slide (picom v13 in ~/.local/bin).
+# off: stops picom, turns xfwm4's own compositor back on and removes the autostart.
+AUTO="$HOME/.config/autostart/picom-slide.desktop"
+case "${1:-status}" in
+  on)  xfconf-query -c xfwm4 -p /general/use_compositing -s false; sleep 0.5
+       pkill -u "$USER" -x picom; sleep 0.3
+       (setsid "$HOME/.local/bin/picom" --config "$HOME/.config/picom/picom.conf" >/dev/null 2>&1 &)
+       printf '[Desktop Entry]\nType=Application\nName=Desktop Slide (picom)\nExec=%s/.local/bin/picom --config %s/.config/picom/picom.conf\nX-GNOME-Autostart-enabled=true\n' "$HOME" "$HOME" > "$AUTO"
+       echo "desktop slide on" ;;
+  off) rm -f "$AUTO"; pkill -u "$USER" -x picom; sleep 0.3
+       xfconf-query -c xfwm4 -p /general/use_compositing -s true
+       echo "desktop slide off (Xfce's own compositor)" ;;
+  status) pgrep -u "$USER" -x picom >/dev/null && echo on || echo off ;;
+  *) echo "usage: desktop-slide on|off|status" >&2; exit 2 ;;
+esac

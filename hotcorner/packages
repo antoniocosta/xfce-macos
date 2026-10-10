@@ -1,0 +1,2 @@
+gcc libx11-dev     # build hotcorner
+wmctrl             # show desktop

@@ -1,0 +1,65 @@
+#!/usr/bin/python3 -I
+"""Play a short click when the output volume changes, like macOS.
+
+Listens to `pactl subscribe` (event-driven, idle when nothing happens) and plays
+the freedesktop volume-change sound whenever the default output's volume level
+changes. Silent while muted, and quick repeats restart the click instead of
+piling up.
+"""
+import os
+import re
+import subprocess
+import time
+
+SOUND = "/usr/share/sounds/freedesktop/stereo/audio-volume-change.oga"
+
+
+def pactl(*args):
+    return subprocess.run(["pactl", *args], capture_output=True, text=True).stdout
+
+
+def volume_state():
+    vol = re.findall(r"(\d+)%", pactl("get-sink-volume", "@DEFAULT_SINK@"))
+    muted = "yes" in pactl("get-sink-mute", "@DEFAULT_SINK@")
+    return (vol[0] if vol else None), muted
+
+
+def main():
+    last = volume_state()
+    player = None
+    events = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, text=True, bufsize=1)
+    for line in events.stdout:
+        if "'change' on sink #" not in line:
+            continue
+        now = volume_state()
+        changed = now[0] != last[0]
+        last = now
+        if not changed or now[1]:
+            continue
+        if player and player.poll() is None:
+            player.kill()   # key held or tapped fast: restart the click
+        player = subprocess.Popen(["paplay", SOUND], stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+
+
+def kill_older_copies():
+    """One copy only: a copy from an earlier login can outlive its session."""
+    pids = subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", "volume-feedback"],
+                          capture_output=True, text=True).stdout.split()
+    for pid in pids:
+        if int(pid) != os.getpid():
+            try:
+                os.kill(int(pid), 15)
+            except OSError:
+                pass
+
+
+if __name__ == "__main__":
+    kill_older_copies()
+    while True:
+        try:
+            main()
+        except Exception:
+            pass
+        time.sleep(2)   # audio server restarted: subscribe again

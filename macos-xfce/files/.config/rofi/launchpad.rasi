@@ -1,0 +1,37 @@
+/* Launchpad-style app grid (F4): full screen, big icons, type to filter */
+@theme "/dev/null"
+
+configuration {
+  modi: "drun";
+  show-icons: true;
+  icon-theme: "Mint-Y-Blue";
+  font: "Inter 11";
+  drun-display-format: "{name}";
+  matching: "normal";
+  sort: true;
+  disable-history: true;   /* alphabetical, like Launchpad */
+  kb-cancel: "Escape,Control+g,Control+bracketleft,XF86LaunchB";   /* F4 again closes it */
+}
+* {
+  fg: #f2f2f2; dim: #9a9a9a; sel: #ffffff26;
+  background-color: transparent; text-color: @fg;
+}
+window {
+  fullscreen: true;
+  transparency: "none";
+  background-color: #1c1c1e;
+}
+mainbox { padding: 6% 10%; spacing: 4%; children: [ inputbar, listview ]; }
+inputbar { children: [ textbox-pad-l, entry, textbox-pad-r ]; }
+textbox-pad-l, textbox-pad-r { expand: true; str: ""; }
+entry {
+  placeholder: "Search"; placeholder-color: @dim; text-color: @fg; cursor-color: @fg;
+  horizontal-align: 0.5; font: "Inter 14";
+  background-color: #ffffff1a; border-radius: 8px; padding: 6px 12px;
+  width: 280px; expand: false;
+}
+listview { columns: 7; lines: 4; spacing: 18px; fixed-columns: true; scrollbar: false; flow: horizontal; }
+element { orientation: vertical; padding: 12px; spacing: 8px; border-radius: 14px; }
+element selected { background-color: @sel; }
+element-icon { size: 72px; horizontal-align: 0.5; }
+element-text { horizontal-align: 0.5; text-color: inherit; }

@@ -1,0 +1,207 @@
+#!/usr/bin/python3 -I
+"""Automatic screen and keyboard brightness from the ambient light sensor, like macOS.
+
+Reads the MacBook's light sensor (IIO `acpi-als`, in lux) every 2 s, smooths it, and moves
+the screen backlight along a logarithmic curve, one step at a time. The keyboard backlight
+fades on in the dark and off in bright light. Manual changes win: if you change the
+brightness yourself, that offset from the curve is remembered (like macOS), and the
+keyboard keeps the level you last chose.
+
+Brightness is set through logind (org.freedesktop.login1.Session.SetBrightness), so no root
+is needed. Settings: `auto-brightness --settings` (also in Xfce's Settings Manager) writes
+~/.config/auto-brightness.conf, which is re-read while running.
+"""
+import configparser
+import glob
+import json
+import math
+import os
+import subprocess
+import sys
+import time
+
+CONF = os.path.expanduser("~/.config/auto-brightness.conf")
+STATE = os.path.expanduser("~/.local/state/auto-brightness.json")
+SAMPLE_S = 2.0
+KBD_ON_LUX, KBD_OFF_LUX = 15, 60          # hysteresis: on below 15 lux, off above 60
+
+
+def read_int(path, default=0):
+    try:
+        with open(path) as f:
+            return int(f.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return default
+
+
+def find(pattern):
+    hits = sorted(glob.glob(pattern))
+    return hits[0] if hits else None
+
+
+def sensor_path():
+    """The first IIO device that reports illuminance (on a MacBook Air: acpi-als)."""
+    for dev in sorted(glob.glob("/sys/bus/iio/devices/iio:device*")):
+        for f in ("in_illuminance_input", "in_illuminance_raw"):
+            if os.path.exists(os.path.join(dev, f)):
+                return os.path.join(dev, f)
+    return None
+
+
+def load_conf():
+    c = configparser.ConfigParser()
+    c.read(CONF)
+    s = c["auto-brightness"] if c.has_section("auto-brightness") else {}
+    return (str(s.get("screen", "true")).lower() == "true",
+            str(s.get("keyboard", "true")).lower() == "true")
+
+
+def save_conf(screen, keyboard):
+    os.makedirs(os.path.dirname(CONF), exist_ok=True)
+    with open(CONF, "w") as f:
+        f.write("[auto-brightness]\n"
+                "# adjust brightness automatically from the light sensor (true/false)\n"
+                f"screen = {'true' if screen else 'false'}\n"
+                f"keyboard = {'true' if keyboard else 'false'}\n")
+
+
+def settings_dialog():
+    screen, keyboard = load_conf()
+    r = subprocess.run(
+        ["zenity", "--list", "--checklist", "--title=Auto Brightness", "--width=380", "--height=230",
+         "--text=Adjust brightness automatically using the light sensor:",
+         "--column=On", "--column=Setting", "--hide-header", "--separator=|",
+         "TRUE" if screen else "FALSE", "Screen brightness",
+         "TRUE" if keyboard else "FALSE", "Keyboard backlight"],
+        capture_output=True, text=True)
+    if r.returncode != 0:      # cancelled
+        return
+    chosen = r.stdout.strip().split("|")
+    save_conf("Screen brightness" in chosen, "Keyboard backlight" in chosen)
+
+
+def session_path():
+    sid = os.environ.get("XDG_SESSION_ID") or subprocess.run(
+        ["loginctl", "show-user", str(os.getuid()), "-p", "Display", "--value"],
+        capture_output=True, text=True).stdout.strip()
+    return f"/org/freedesktop/login1/session/{sid}" if sid else "/org/freedesktop/login1/session/auto"
+
+
+def set_brightness(session, subsystem, name, value):
+    subprocess.run(["busctl", "call", "org.freedesktop.login1", session, "org.freedesktop.login1.Session",
+                    "SetBrightness", "ssu", subsystem, name, str(int(value))],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def load_state():
+    try:
+        with open(STATE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(state):
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    with open(STATE, "w") as f:
+        json.dump(state, f)
+
+
+def curve(lux, max_level):
+    """lux -> screen level: 0 lux ~ 27%, 10 ~ 47%, 100 ~ 67%, 1000 ~ 87%, 4000+ = 100%."""
+    frac = 0.27 + 0.20 * math.log10(max(lux, 0) + 1)
+    return frac * max_level
+
+
+def main():
+    sensor = sensor_path()
+    screen = find("/sys/class/backlight/*")
+    kbd = find("/sys/class/leds/*kbd_backlight*")
+    if not sensor:
+        sys.exit("auto-brightness: no ambient light sensor found")
+    session = session_path()
+    smax = read_int(f"{screen}/max_brightness", 1) if screen else 1
+    kmax = read_int(f"{kbd}/max_brightness", 1) if kbd else 1
+
+    state = load_state()
+    bias = state.get("screen_bias")                     # your offset from the curve, in levels
+    kbd_level = int(state.get("keyboard_level") or (read_int(f"{kbd}/brightness") if kbd else 0) or kmax // 2)
+    smoothed = None
+    last_screen = read_int(f"{screen}/brightness") if screen else None
+    last_kbd = read_int(f"{kbd}/brightness") if kbd else None
+    kbd_on = None
+    kbd_user_off = False      # you switched the keyboard light off: leave it until the room gets bright
+
+    while True:
+        auto_screen, auto_kbd = load_conf()
+        lux = read_int(sensor)
+        # smooth in log space so a passing shadow or a lamp switched on settles in a few seconds
+        lv = math.log10(lux + 1)
+        smoothed = lv if smoothed is None else smoothed + 0.4 * (lv - smoothed)
+        lux_s = 10 ** smoothed - 1
+
+        if screen and auto_screen:
+            cur = read_int(f"{screen}/brightness")
+            if bias is None:
+                # first run: today's brightness is your preference for today's light
+                bias = cur - curve(lux_s, smax)
+                state["screen_bias"] = round(bias, 2); save_state(state)
+            if last_screen is not None and cur != last_screen:
+                # you changed it: remember the offset from where the curve is now
+                bias = cur - curve(lux_s, smax)
+                state["screen_bias"] = round(bias, 2); save_state(state)
+            target = max(1, min(smax, round(curve(lux_s, smax) + bias)))
+            if target != cur:
+                step = 1 if target > cur else -1
+                while cur != target:                  # glide one level at a time
+                    cur += step
+                    set_brightness(session, "backlight", os.path.basename(screen), cur)
+                    time.sleep(0.12)
+            last_screen = cur
+        elif screen:
+            last_screen = read_int(f"{screen}/brightness")
+
+        if kbd and auto_kbd:
+            cur = read_int(f"{kbd}/brightness")
+            if last_kbd is not None and cur != last_kbd:
+                if cur > 0:
+                    kbd_level = cur                   # you picked a level: keep it
+                    state["keyboard_level"] = kbd_level; save_state(state)
+                    kbd_user_off = False
+                else:
+                    kbd_user_off = True
+            if kbd_user_off and lux_s > KBD_OFF_LUX:
+                kbd_user_off = False                  # bright room: back to automatic from here
+            if kbd_on is None:
+                kbd_on = lux_s < KBD_OFF_LUX
+            elif kbd_on and lux_s > KBD_OFF_LUX:
+                kbd_on = False
+            elif not kbd_on and lux_s < KBD_ON_LUX:
+                kbd_on = True
+            target = kbd_level if kbd_on and not kbd_user_off else 0
+            if target != cur:
+                n = 12                                 # fade over ~0.6 s
+                for i in range(1, n + 1):
+                    set_brightness(session, "leds", os.path.basename(kbd), cur + (target - cur) * i / n)
+                    time.sleep(0.05)
+                cur = target
+            last_kbd = cur
+        elif kbd:
+            last_kbd = read_int(f"{kbd}/brightness")
+
+        time.sleep(SAMPLE_S)
+
+
+if __name__ == "__main__":
+    if "--settings" in sys.argv:
+        settings_dialog()
+    else:
+        # one copy only: a copy from an earlier login can outlive its session
+        for pid in subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", "auto-brightness"],
+                                  capture_output=True, text=True).stdout.split():
+            if int(pid) != os.getpid():
+                try:
+                    os.kill(int(pid), 15)
+                except OSError:
+                    pass
+        main()

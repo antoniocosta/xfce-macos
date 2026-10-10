@@ -1,0 +1,232 @@
+# Linux Utilities
+
+Make **Linux Mint Xfce** feel like **macOS**, with as little CPU and memory as possible. It's
+for old Macs and low-end laptops, where macOS no longer updates or a heavy desktop no longer
+fits. The goal is that someone coming from a Mac doesn't have to relearn anything: the same
+shortcuts, gestures, menu bar, dock, Mission Control, hot corners, and settings with the same
+names, where a Mac user would look for them.
+
+`macos-xfce/` sets up the whole thing. Each utility can also be installed on its own.
+
+| Utility | What it does |
+|---|---|
+| [macos-xfce](#macos-xfce) | The macOS look and feel for Mint Xfce: Cmd-key shortcuts, menu bar with a global menu, dock, Spotlight, Launchpad, Mission Control, Spaces with the slide, Cmd+Tab, screenshots, macOS cursors. Installs the utilities below. |
+| [hotcorner](#hotcorner) | Hot corners: top right shows the desktop, bottom right opens Mission Control. A tiny C program. |
+| [desktop-slide](#desktop-slide) | The macOS slide when you switch desktops (Spaces) with Ctrl+arrows or a 3-finger swipe. |
+| [volume-feedback](#volume-feedback) | The click when you change the volume. |
+| [disk-label](#disk-label) | A "Macintosh HD / 91 GB free" icon on the desktop, with live free space. |
+| [auto-brightness](#auto-brightness) | Screen and keyboard backlight follow the room light, like a MacBook (needs its light sensor). |
+| **Extras** | |
+| [net-badge](#net-badge) | Network latency in the menu bar ("● 24 ms"), with a popover. |
+| [ssh-keyring](#ssh-keyring) | Unlocks your SSH key at login from the login keyring, like the macOS Keychain. |
+
+Tested on Linux Mint 22.3 Xfce (X11) on a MacBook Air mid 2012 (Intel HD 4000, 8 GB).
+Nothing is tied to that machine: Mac-only parts (fan control, light sensor, Apple trackpad
+thresholds) switch themselves on only where the hardware is there.
+
+## Install
+
+```
+git clone https://github.com/antoniocosta/linux-utilities.git
+cd linux-utilities
+./macos-xfce/install.sh                  # everything (asks for sudo once, for packages)
+```
+
+Then **log out and back in** once (the global menu and Toshy need a fresh session).
+
+Options, all off by default:
+
+```
+./macos-xfce/install.sh --trim           # also switch off services and remove apps a laptop rarely needs (see Trim)
+./macos-xfce/install.sh --english-only   # also remove other languages' translations, help and manuals
+./macos-xfce/install.sh --user           # skip packages (already installed): no sudo
+```
+
+One utility on its own: `./<utility>/install.sh`, for example `./net-badge/install.sh`.
+
+Everything is safe to re-run: each step checks before it changes anything. Programs go in
+`~/.local/bin`, settings in your Xfce settings and `~/.config`. Where a file is shared with other
+tools (`gtk.css`, `~/.xsessionrc`, Firefox's `user.js`, Toshy's config), the change sits in a
+block marked `linux-utilities` that a re-run replaces instead of duplicating.
+
+## Footprint
+
+Measured on the 2012 MacBook Air over a 12-hour session (resident memory, average CPU):
+
+| Process | Memory | CPU |
+|---|---|---|
+| hotcorner | 3 MB | 0.01 % |
+| volume-feedback | 11 MB | 0 (sleeps until the volume changes) |
+| disk-label | 4 MB | 0 (checks once a minute) |
+| skippy-xd (Mission Control, waiting) | 11 MB | 0 |
+| Touchégg client | 15 MB | 0 |
+| Plank (dock) | 57 MB | 0 |
+| picom (desktop slide; replaces Xfce's compositor) | 79 MB | 0.3 % |
+
+picom under a redraw load: Xfce's own compositor 7.8 % CPU, picom with vsync 13.9 %, picom
+without vsync 9.9 % (used; no visible tearing). `desktop-slide off` goes back to Xfce's
+compositor.
+
+---
+
+## macos-xfce
+
+| macOS | Here | How |
+|---|---|---|
+| Cmd-key shortcuts (Cmd+C/V/T/W/Q…, Cmd+C/V in terminals; Ctrl+C still interrupts) | same | [Toshy](https://github.com/RedBearAK/toshy), plus keymaps in its `user_apps` slice (`toshy-keymaps.py`) |
+| Cmd+Tab | app icons from every desktop, dark rounded panel | Xfce's switcher, styled in `files/gtk3-overrides.css` |
+| Ctrl+Tab / Ctrl+Shift+Tab | next / previous tab | Toshy keymap |
+| Ctrl+← / Ctrl+→ | previous / next desktop, with the slide | `desktop-switch` ([desktop-slide](#desktop-slide)) |
+| Ctrl+↑, F3, bottom-right corner | Mission Control: every window of every desktop | [skippy-xd](https://github.com/felixfung/skippy-xd), built from a release |
+| F4 | Launchpad: full-screen app grid, type to filter | rofi, `files/.config/rofi/launchpad.rasi` |
+| Cmd+Space | Spotlight-style app search | rofi, `files/.config/rofi/config.rasi` |
+| Cmd+Shift+3 / 4 / 5 | full screen / area / tool, saved to `~/Pictures/Screenshots` | xfce4-screenshooter |
+| 3-finger swipe left / right / up | previous / next desktop / show desktop | Touchégg, `files/.config/touchegg/touchegg.conf`; its client runs under `touchegg-client`, which restarts it if it crashes |
+| Spaces | 4 desktops; drag a window against the left/right screen edge to carry it over | Xfce's window manager (`wrap_windows`) |
+| a window asking for attention | takes you to its desktop (Xfce's default pulls it to yours) | Xfce `activate_action = switch` |
+| menu bar | menu · app menu (global menu) ··· status icons · volume · battery · notifications · clock | xfce4-panel + `xfce4-appmenu-plugin` |
+| Dock | Plank Reloaded: WhiteSur theme, magnification, auto-hide; Finder (Files), Launchpad, Firefox, App Store (Software Manager), System Settings, Downloads, Trash | `files/plank-dock1.dconf`; a dock you already arranged keeps its items |
+| look | WhiteSur dark window theme, Inter font, macOS cursors, Mint's app icons with a horizontal macOS battery, dark mode for Firefox and GTK4 apps too | `setup_theme` |
+| window buttons | close / minimize / maximize on the left, centred title | Xfce window manager |
+| desktop | "Macintosh HD / 91 GB free", USB drives and servers in a column at the top right | xfdesktop + [disk-label](#disk-label) |
+| Firefox | trackpad scrolling slowed to macOS speed, leaner (4 content processes, tabs unloaded when memory runs low, no telemetry or sponsored content; site isolation kept), hardware video decoding where the GPU has it | Firefox `user.js` |
+
+Also: `mbpfan` (fan control) on Macs, `tlp` (battery life) on laptops, zram (compressed swap in
+RAM), the VA-API `i965` driver on older Intel GPUs, and the Update Manager shield shown only
+when there are updates.
+
+### Trim (`--trim`)
+
+Background services and preinstalled apps that a typical laptop doesn't need. About 350 MB
+of RAM and 1.5 GB of disk on the test machine.
+
+| What | Why | Undo |
+|---|---|---|
+| printing (`cups`, `cups-browsed`) | cups-browsed keeps scanning the network | `sudo systemctl enable --now cups cups-browsed` |
+| `kerneloops`, `motd-news` | crash reports, login news | `sudo systemctl enable --now kerneloops motd-news.timer` |
+| `ModemManager` | no mobile modem | `sudo systemctl unmask ModemManager` |
+| `colord` + `xiccd` | no colour profiles | `sudo systemctl unmask colord` |
+| `rsyslog` | journald already keeps every log | `sudo systemctl unmask rsyslog syslog.socket` |
+| `fwupd`, `boltd` (Macs only) | Apple ships no firmware through fwupd; no boltd needed for Thunderbolt 1/2 | `sudo systemctl unmask fwupd bolt` |
+| `switcheroo-control` (one GPU), `iio-sensor-proxy` (no rotation sensor) | nothing to switch or rotate | `sudo systemctl unmask …` |
+| LibreOffice, Thunderbird, GNOME Calendar, Yaru icons, Mint-L theme | rarely used / unused | reinstall from Software Manager |
+| calendar and contacts services, reminder popups, GNOME Online Accounts | only GNOME Calendar used them | `systemctl --user unmask evolution-source-registry evolution-calendar-factory evolution-addressbook-factory` |
+| tray icons: printer, System Reports, Toshy | printing is off; System Reports polls constantly (it's still in the menu); the keys work without Toshy's icon | delete their files in `~/.config/autostart/` |
+| PackageKit's debconf helper | can busy-loop at 100 % CPU for a minute after login; Mint's tools don't need it | `systemctl --user unmask pk-debconf-helper.socket pk-debconf-helper.service` |
+
+Kept on purpose: the previous kernel, Chinese/Japanese/Korean fonts (otherwise such text shows
+as boxes), Bluetooth, `avahi`, `thermald`, Thunar's daemon.
+
+### English only (`--english-only`)
+
+Removes other languages' app translations, help pages and manuals, and adds
+`/etc/dpkg/dpkg.cfg.d/90-english-only` so updates keep it that way. Region formats (dates,
+numbers) are not affected. Undo: delete that file and reinstall a package to get its
+translations back.
+
+### Gotchas
+
+- Toshy turns the physical **Ctrl key into Super in GUI apps** (it stays Ctrl in terminals), so
+  Ctrl shortcuts are bound as `<Super>…`.
+- The global menu loads through `GTK_MODULES` at login. Switching it on live crashes running tray
+  apps, so it only appears after logging in again.
+- skippy-xd's development branch can crash; the installer stays on a release tag.
+- A Toshy reinstall brings its rainbow tray icon back; re-run the installer.
+
+### Undo
+
+- Theme, menu bar, shortcuts: Settings → Appearance / Window Manager / Panel / Keyboard.
+- Desktop slide: `desktop-slide off`.
+- Helpers: delete their entries in `~/.config/autostart/` and log out.
+- Marked blocks: delete the `linux-utilities` blocks from `~/.config/gtk-3.0/gtk.css`,
+  `~/.xsessionrc`, the Firefox profile's `user.js` and `~/.config/toshy/toshy_config.py`.
+
+---
+
+## hotcorner
+
+Move the pointer into a corner and rest it there for a moment: top right shows the desktop (do
+it again to bring the windows back), bottom right opens Mission Control. It doesn't fire while a
+mouse button is held, so dragging a window into a corner does nothing.
+
+`hotcorner.c` asks X where the pointer is 5 times a second, and 50 times a second only while the
+pointer is near a corner, so it reacts quickly and still uses almost nothing. Polling, rather
+than an invisible window in the corner, keeps it working when the dock or a full-screen window
+covers the corner. `hot-corners` starts it with the corners and restarts it (and skippy-xd) if
+either ever stops.
+
+---
+
+## desktop-slide
+
+Xfce switches desktops instantly. macOS slides the old desktop out and the new one in, in the
+direction you swiped. Xfce's compositor can't animate, and Mint's picom (v10) can only fade, so
+this builds picom v13 from source, which has animations. picom knows nothing about desktops or
+directions, so `desktop-switch` marks the windows that leave and arrive with
+`_MAC_SLIDE = fwd/back` just before switching, and picom's rules (`picom.conf`) slide them by a
+screen width in 0.35 s. Switches from Cmd+Tab or Mission Control stay instant, as on macOS.
+
+```
+desktop-slide on | off | status    # off: back to Xfce's own compositor
+desktop-switch next | prev         # what Ctrl+arrows and the swipes run
+```
+
+---
+
+## volume-feedback
+
+Plays the freedesktop volume click whenever the output volume changes, like macOS. It listens to
+`pactl subscribe`, so it sleeps until something happens. Silent while muted; quick repeats
+restart the click instead of piling up.
+
+---
+
+## disk-label
+
+Xfce's desktop can't show free space under the File System icon, so this keeps a launcher on the
+desktop named "Macintosh HD" with the free space underneath (decimal gigabytes, like macOS). It
+opens `/` in the file manager, checks once a minute, and only rewrites the launcher when the
+number changes.
+
+---
+
+## auto-brightness
+
+MacBooks have an ambient light sensor that Linux exposes but nothing uses. This reads it every
+2 seconds, smooths it, and moves the screen backlight along a curve, one step at a time; the
+keyboard backlight fades on in the dark and off in bright light. When you change the brightness
+yourself, it keeps that offset, like macOS. Brightness is set through logind, so no root is
+needed. Turn screen or keyboard on and off in Settings Manager → **Auto Brightness**.
+
+Installs only where there is a light sensor.
+
+---
+
+## net-badge
+
+A coloured dot and the current latency in the menu bar, measured every 5 seconds as one TCP
+handshake to Apple's captive-portal server. Colours follow
+[Network Badge](https://github.com/Someniak/macos-network-badge)'s tiers (< 30 / 80 / 150 /
+300 ms). The tooltip and a click popover show the connection, Wi-Fi name, a sparkline of the
+last 3 minutes and min/avg/max; a notification appears when the connection turns poor. Runs in
+Xfce's Generic Monitor plugin, so there's no extra process between measurements.
+
+---
+
+## ssh-keyring
+
+On macOS the Keychain unlocks your SSH key when you log in. This does the same with the login
+keyring: the passphrase is stored there once, and at login `ssh-keyring unlock` adds the key to
+the session's ssh-agent. The key file stays encrypted on disk, and the passphrase never appears
+on a command line.
+
+```
+./ssh-keyring/install.sh [KEY]     # default ~/.ssh/id_ed25519
+ssh-keyring store                  # once: type the passphrase; it's checked, then saved
+ssh-keyring forget                 # remove it from the keyring
+```
+
+## License
+
+MIT, see [LICENSE](LICENSE). The projects the installers download keep their own licences:
+see [THIRD_PARTY.md](THIRD_PARTY.md).

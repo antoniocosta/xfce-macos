@@ -1,0 +1,32 @@
+/* Spotlight-style app launcher, opened with Cmd+Space */
+configuration {
+  modi: "drun";
+  show-icons: true;
+  icon-theme: "Mint-Y-Blue";
+  font: "Inter 13";
+  display-drun: "";
+  drun-display-format: "{name}";
+  matching: "normal";
+  sort: true;
+}
+/* start from an empty theme so rofi's built-in default colours don't leak in */
+@theme "/dev/null"
+
+* {
+  bg: #2b2b2df2; fg: #f2f2f2; dim: #9a9a9a; sel: #0a84ff;
+  background-color: transparent; text-color: @fg;
+}
+window {
+  location: north; y-offset: 22%; width: 640px; transparency: "real";
+  background-color: #2b2b2df5; border-radius: 14px; border: 1px; border-color: #ffffff22;
+}
+mainbox { padding: 10px; spacing: 8px; children: [ inputbar, listview ]; }
+inputbar { padding: 8px 12px; children: [ prompt, entry ]; }
+prompt { str: "🔍"; padding: 0 10px 0 0; }
+entry { placeholder: "Spotlight Search"; placeholder-color: @dim; text-color: @fg; cursor-color: @fg; font: "Inter 17"; }
+listview { lines: 7; scrollbar: false; fixed-height: false; }
+element { padding: 6px 10px; spacing: 10px; border-radius: 8px; }
+element { text-color: @fg; }
+element selected { background-color: @sel; text-color: #ffffff; }
+element-icon { size: 28px; }
+element-text { vertical-align: 0.5; text-color: inherit; }

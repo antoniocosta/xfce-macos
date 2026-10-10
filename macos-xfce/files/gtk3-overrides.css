@@ -1,0 +1,41 @@
+/* Cmd+Tab switcher (xfwm4), styled like macOS: big icons, dark rounded panel,
+   no blue border, soft grey highlight behind the selected app */
+#xfwm-tabwin {
+  -XfwmTabwinWidget-icon-size: 96;
+  -XfwmTabwinWidget-border-radius: 18;
+  background-color: rgba(40, 40, 42, 0.92);
+  border: none;
+  border-radius: 18px;
+  box-shadow: none;
+  padding: 14px;
+}
+#xfwm-tabwin button,
+#xfwm-tabwin button:hover,
+#xfwm-tabwin button:focus {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  border-radius: 14px;
+  padding: 8px;
+}
+#xfwm-tabwin button:checked,
+#xfwm-tabwin button:checked:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+  border: none;
+  box-shadow: none;
+}
+#xfwm-tabwin label {
+  color: #f2f2f2;
+}
+
+/* Top bar tray (xfce4 systray plugin): breathing room between icons */
+#sn-button {
+  padding-left: 7px;
+  padding-right: 7px;
+}
+
+/* Volume / brightness / keyboard-backlight popups (xfce4-notifyd): slightly smaller icon */
+#XfceNotifyWindow image {
+  -gtk-icon-transform: scale(0.75);
+}

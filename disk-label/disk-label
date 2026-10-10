@@ -1,0 +1,27 @@
+#!/bin/bash
+# disk-label: keep a "Macintosh HD / 84 GB free" icon on the desktop, like macOS's item info.
+# Xfce's desktop can't show free space under the File System icon, so this keeps a launcher
+# (~/Desktop/Macintosh HD.desktop, opens / in the file manager) whose name carries the free
+# space. Checks once a minute and only rewrites the file when the shown number changes.
+set -u
+# one copy only: a copy from an earlier login can outlive its session
+for p in $(pgrep -u "$USER" -x disk-label); do [ "$p" != $$ ] && kill "$p"; done
+desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+file="$desk/Macintosh HD.desktop"
+shown=""
+
+while true; do
+    free=$(df -B1 --output=avail / | tail -1)
+    # decimal gigabytes, like macOS
+    label=$(awk -v b="$free" 'BEGIN { g = b / 1e9; printf (g >= 10 ? "%.0f GB free" : "%.1f GB free"), g }')
+    if [[ "$label" != "$shown" || ! -f "$file" ]]; then
+        tmp="$(mktemp "$desk/.disk-label.XXXXXX")"
+        printf '[Desktop Entry]\nVersion=1.0\nType=Application\nName=Macintosh HD\\n%s\nComment=Internal disk\nIcon=drive-harddisk\nExec=exo-open --launch FileManager /\nTerminal=false\n' "$label" > "$tmp"
+        chmod +x "$tmp"
+        mv -f "$tmp" "$file"
+        # Xfce runs a launcher without a warning only when its checksum is recorded as trusted
+        gio set -t string "$file" metadata::xfce-exe-checksum "$(sha256sum "$file" | cut -d' ' -f1)" 2>/dev/null
+        shown="$label"
+    fi
+    sleep 60
+done

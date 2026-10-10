@@ -1,0 +1,10 @@
+#!/bin/bash
+# Touchégg's gesture client, restarted if it exits: it can crash when it starts at login a
+# moment too early, and it only starts once, so swipes would stay dead until the next login.
+for p in $(pgrep -u "$USER" -x touchegg-client); do [ "$p" != $$ ] && kill "$p"; done
+pkill -u "$USER" -x touchegg 2>/dev/null
+sleep 1
+while true; do
+    touchegg
+    sleep 2
+done

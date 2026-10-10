@@ -1,0 +1,2 @@
+pulseaudio-utils   # pactl, paplay (also used on PipeWire)
+sound-theme-freedesktop   # the click
