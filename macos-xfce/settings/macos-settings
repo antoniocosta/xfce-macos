@@ -50,7 +50,7 @@ class Debounce:
         self.source = self.GLib.timeout_add(self.delay, fire)
 
 
-def build_window(Gtk, title, width=480):
+def build_window(Gtk, title, width=520):
     win = Gtk.Window(title=title)
     win.set_default_size(width, -1)
     win.set_resizable(False)
@@ -67,7 +67,8 @@ def build_window(Gtk, title, width=480):
 
 
 def row(Gtk, grid, n, label, widget, note=None):
-    lab = Gtk.Label(label=label, xalign=1)
+    lab = Gtk.Label(label=label, xalign=1, wrap=True, justify=Gtk.Justification.RIGHT)
+    lab.set_max_width_chars(22)                       # long labels wrap instead of widening the window
     lab.get_style_context().add_class("row-label")
     lab.set_valign(Gtk.Align.CENTER)
     grid.attach(lab, 0, n, 1, 1)
@@ -75,6 +76,7 @@ def row(Gtk, grid, n, label, widget, note=None):
     grid.attach(widget, 1, n, 1, 1)
     if note:
         nl = Gtk.Label(label=note, xalign=0, wrap=True)
+        nl.set_max_width_chars(38)                    # the same for the notes underneath
         nl.get_style_context().add_class("dim")
         grid.attach(nl, 1, n + 1, 1, 1)
 
@@ -143,7 +145,11 @@ def pane_dock():
         note="The picture slides when you switch desktops. Turning it off hands drawing back to "
              "Xfce's own compositor.")
 
-    row(Gtk, grid, 6, "Hot Corners:", hot_corners_block(Gtk, GLib))
+    frame = Gtk.Frame(label="Hot Corners")
+    block = hot_corners_block(Gtk, GLib)
+    block.set_border_width(12)
+    frame.add(block)
+    outer.pack_start(frame, False, False, 0)
     return win
 
 
@@ -182,12 +188,13 @@ def hot_corners_block(Gtk, GLib):
     grid.attach(combo("tl"), 0, 0, 1, 1)
     grid.attach(combo("tr"), 2, 0, 1, 1)
     screen = Gtk.Box()
-    screen.set_size_request(120, 70)
+    screen.set_size_request(96, 64)
     screen.get_style_context().add_class("screen-box")
     grid.attach(screen, 1, 0, 1, 3)
     grid.attach(combo("bl"), 0, 2, 1, 1)
     grid.attach(combo("br"), 2, 2, 1, 1)
-    hint = Gtk.Label(label="Rest the pointer in a corner of the screen to do this.", xalign=0.5)
+    hint = Gtk.Label(label="Rest the pointer in a corner of the screen to do this.", xalign=0.5, wrap=True)
+    hint.set_max_width_chars(40)
     hint.get_style_context().add_class("dim")
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     box.pack_start(grid, False, False, 0)
