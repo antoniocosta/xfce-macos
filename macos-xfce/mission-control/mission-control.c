@@ -1,7 +1,8 @@
 /* mission-control: macOS Mission Control for X11 (Xfce).
  *
  * The Spaces bar across the top shows every desktop (a full-screen app's Space is named after the
- * app); below it, the windows of the current desktop, side by side. Click a window to go to it,
+ * app); below it, the windows of the current desktop, side by side. Full-screen windows are only
+ * in the bar, as on macOS; opened from a full-screen app, it shows the desktop the app came from. Click a window to go to it,
  * click a desktop to switch to it, drag a window onto a desktop to move it there (or onto + to give
  * it a new desktop), + adds a desktop, the x on a hovered desktop removes it (its windows go to the
  * neighbouring desktop), and dragging a desktop along the bar reorders the desktops (their windows
@@ -86,7 +87,9 @@ static int nwins;
 static int cur_items[MAX_WIN], nitems;      /* indexes into wins[] of the current desktop's windows */
 static struct desk desks[MAX_DESK];
 static int ndesk;
-static long cur;
+static long cur;                            /* the desktop (or Space) it was opened on */
+static long view;                           /* the desktop whose windows are shown: cur, or the
+                                               desktop a full-screen app came from */
 static double plus_x, plus_y, plus_w, plus_h;
 static int hover_item = -1, hover_desk = -1, hover_close = 0, hover_plus = 0;
 static int press_item = -1, dragging = 0;
@@ -254,7 +257,8 @@ static void read_windows(void) {
         read_title(w, v->title, sizeof v->title);
         read_app(w, v->app, sizeof v->app);
         v->icon = load_icon(w);
-        if (d == cur && a.map_state == IsViewable) {
+        if (d == view && a.map_state == IsViewable && !v->fullscreen_space) {   /* a full-screen app
+                                                         is its own Space: only in the bar */
             v->pm = XCompositeNameWindowPixmap(dpy, v->frame);
             if (v->pm) v->surf = cairo_xlib_surface_create(dpy, v->pm, a.visual, a.width, a.height);
             cur_items[nitems++] = nwins;
@@ -751,27 +755,53 @@ static void update_hover(int x, int y) {
 
 /* ---- opening and closing ----------------------------------------------------------------- */
 
+/* if desktop d is a full-screen app's Space: the desktop the app came from, else d */
+static long origin_of_space(long d) {
+    unsigned long n; Window *list = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, &n);
+    long o = d;
+    for (unsigned long i = 0; list && i < n; i++)
+        if (get_card(list[i], A_DESK, -1) == d && has_atom(list[i], A_STATE, A_FULL)) {
+            long w = get_card(list[i], A_ORIGIN, -1);
+            if (w >= 0) { o = w; break; }
+        }
+    if (list) XFree(list);
+    return o;
+}
+
+static void create_overlay(void) {
+    if (ov != None) return;
+    XSetWindowAttributes at = {0};
+    at.override_redirect = True;
+    at.background_pixel = BlackPixel(dpy, DefaultScreen(dpy));
+    at.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask;
+    ov = XCreateWindow(dpy, root, 0, 0, SW, SH, 0, CopyFromParent, InputOutput, CopyFromParent,
+                       CWOverrideRedirect | CWEventMask | CWBackPixel, &at);
+    XStoreName(dpy, ov, "Mission Control");
+}
+
 static void open_mc(void) {
     if (is_open) return;
     cur = get_card(root, A_CURDESK, 0);
+    view = origin_of_space(cur);
     if (bg) cairo_surface_destroy(bg);
     bg = NULL;
     cairo_surface_t *img = load_wallpaper(cur);
     if (img) { bg = wallpaper_on_server(img); cairo_surface_destroy(img); }
     take_snapshot();                                     /* the current desktop, as it is now */
+    create_overlay();
+    if (view != cur) {             /* from a full-screen app: its desktop's windows, live. Switch
+                                      there behind the overlay (back again if nothing is chosen) */
+        XMapRaised(dpy, ov);
+        XSync(dpy, False);
+        switch_desktop(view);
+        for (int i = 0; i < 30 && get_card(root, A_CURDESK, -1) != view; i++) { XSync(dpy, False); usleep(10000); }
+        usleep(80000);                                   /* its windows are mapped */
+    }
     XCompositeRedirectSubwindows(dpy, root, CompositeRedirectAutomatic);   /* window images, even
                                                         with no compositor or one that steps aside */
     read_windows();
     layout_desks();
     layout_items();
-    if (ov == None) {
-        XSetWindowAttributes at = {0};
-        at.override_redirect = True;
-        at.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask;
-        ov = XCreateWindow(dpy, root, 0, 0, SW, SH, 0, CopyFromParent, InputOutput, CopyFromParent,
-                           CWOverrideRedirect | CWEventMask, &at);
-        XStoreName(dpy, ov, "Mission Control");
-    }
     is_open = 1;
     hover_item = hover_desk = press_item = press_desk = -1; dragging = desk_dragging = 0;
     XMapRaised(dpy, ov);
@@ -794,7 +824,8 @@ static void close_mc(Window go_to, long switch_to) {
     if (bg) { cairo_surface_destroy(bg); bg = NULL; }
     if (bg_pm) { XFreePixmap(dpy, bg_pm); bg_pm = None; }
     XCompositeUnredirectSubwindows(dpy, root, CompositeRedirectAutomatic);
-    if (switch_to >= 0 && switch_to != cur) switch_desktop(switch_to);
+    if (switch_to >= 0 && switch_to != view) switch_desktop(switch_to);
+    else if (switch_to < 0 && go_to == None && view != cur) switch_desktop(cur);   /* back to the app */
     if (go_to != None) activate(go_to);
     XFlush(dpy);
     cairo_debug_reset_static_data();                     /* closed: give the memory back */
@@ -843,6 +874,7 @@ static void remove_desktop(int d) {
         long no = o == d ? (to > d ? to - 1 : to) : (o > d ? o - 1 : o);
         if (no != o) XChangeProperty(dpy, wins[i].w, A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&no, 1);
     }
+    if (view > d) view--;
     if (cur >= d && cur > 0) { cur--; switch_desktop(cur); }
     XSync(dpy, False);
     set_desktops(n - 1);
@@ -868,7 +900,9 @@ static void reorder_desktops(int from, int to) {
         if (o >= 0 && o < n && newpos[o] != o)
             XChangeProperty(dpy, wins[i].w, A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&newpos[o], 1);
     }
-    if (newpos[cur] != cur) { cur = newpos[cur]; switch_desktop(cur); }
+    view = newpos[view];
+    if (newpos[cur] != cur) { cur = newpos[cur]; if (view == cur) switch_desktop(cur); }
+    if (view != cur) switch_desktop(view);
     XSync(dpy, False);
     usleep(50000);
     refresh();
@@ -889,7 +923,7 @@ static void on_release(int x, int y) {
     if (dragging) {
         Window w = wins[press_item].w;
         dragging = 0; press_item = -1;
-        if (hover_desk >= 0 && hover_desk != cur) {
+        if (hover_desk >= 0 && hover_desk != view) {
             move_to_desktop(w, hover_desk);
             XSync(dpy, False); usleep(30000); refresh();
         } else if (hover_plus) {

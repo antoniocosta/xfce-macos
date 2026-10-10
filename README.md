@@ -248,7 +248,9 @@ Installs only where there is a light sensor.
 
 macOS Mission Control. The **Spaces bar** across the top shows every desktop, with a full-screen
 app's Space named after the app; below it, the **current desktop's windows**, side by side, with
-their icons (and the title of the one under the pointer).
+their icons (and the title of the one under the pointer). As on macOS, a full-screen app is only
+in the bar, never among the windows; opened from a full-screen app, Mission Control shows the
+windows of the desktop that app came from (and goes back to the app if you pick nothing).
 
 - Click a window to go to it; click a desktop to switch to it; Esc, F3, Ctrl+↑, a 3-finger swipe
   down or a click on empty space closes it.
