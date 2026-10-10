@@ -9,7 +9,7 @@ mapfile -t pkgs < <(packages_of "$HERE"); ensure_packages "${pkgs[@]}"
 PICOM_TAG="v13"
 if ! "$BIN/picom" --version 2>/dev/null | grep -q "^$PICOM_TAG "; then
     info "Building picom $PICOM_TAG (a few minutes)"
-    rm -rf "$SRC/picom-$PICOM_TAG"; mkdir -p "$SRC"
+    mkd "$SRC"; track_file "$SRC/picom-$PICOM_TAG"; track_file "$BIN/picom"; rm -rf "$SRC/picom-$PICOM_TAG"
     git clone -q --depth=1 --branch "$PICOM_TAG" https://github.com/yshui/picom.git "$SRC/picom-$PICOM_TAG"
     (cd "$SRC/picom-$PICOM_TAG" && meson setup --buildtype=release build >/dev/null && ninja -C build >/dev/null)
     install -m 755 "$SRC/picom-$PICOM_TAG/build/src/picom" "$BIN/picom"
@@ -17,5 +17,8 @@ if ! "$BIN/picom" --version 2>/dev/null | grep -q "^$PICOM_TAG "; then
 fi
 install_bin "$HERE/desktop-slide" "$HERE/desktop-switch"
 [[ "$(install_file "$HERE/picom.conf" "$HOME/.config/picom/picom.conf")" == changed ]] && ok "Installed ~/.config/picom/picom.conf"
+# "desktop-slide on" turns Xfce's own compositor off and starts picom at login
+xf_record xfwm4 /general/use_compositing bool
+track_file "$AUTOSTART/picom-slide.desktop"; mkd "$AUTOSTART"; track_proc picom
 "$BIN/desktop-slide" on >/dev/null
 ok "Desktop slide on (\`desktop-slide off\` goes back to Xfce's own compositor)"

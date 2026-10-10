@@ -9,5 +9,6 @@ mapfile -t pkgs < <(packages_of "$HERE"); ensure_packages "${pkgs[@]}"
 build_c "$HERE/hotcorner.c" hotcorner
 install_bin "$HERE/hot-corners" "$HERE/show-desktop"
 autostart_entry "Hot Corners" "$BIN/hot-corners"
+track_proc hot-corners hotcorner
 (setsid "$BIN/hot-corners" >/dev/null 2>&1 &)   # replaces any running copy itself
 ok "Hot corners on (top right: show desktop, bottom right: Mission Control)"
