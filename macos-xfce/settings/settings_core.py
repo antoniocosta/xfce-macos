@@ -12,7 +12,7 @@ import os
 import re
 import subprocess
 
-CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "linux-utilities")
+CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "xfce-macos")
 HOT_CORNERS_CONF = os.path.join(CONFIG_DIR, "hot-corners.conf")
 TRACKPAD_CONF = os.path.join(CONFIG_DIR, "trackpad.conf")
 BRIGHTNESS_CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),

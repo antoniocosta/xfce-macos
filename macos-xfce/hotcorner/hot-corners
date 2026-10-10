@@ -1,6 +1,6 @@
 #!/bin/bash
 # macOS-style hot corners, set up in Desktop & Dock > Hot Corners (settings page). Reads
-# ~/.config/linux-utilities/hot-corners.conf; with none saved: top right = show desktop,
+# ~/.config/xfce-macos/hot-corners.conf; with none saved: top right = show desktop,
 # bottom right = Mission Control. (Dragging windows across desktops is xfwm4's own wrap_windows.)
 # Restarts hotcorner if it ever stops. Run again after changing the settings: it replaces itself.
 if [ -z "$HOT_CORNERS_TEST" ]; then      # (the tests set it, so they never stop your own corners)
@@ -8,7 +8,7 @@ if [ -z "$HOT_CORNERS_TEST" ]; then      # (the tests set it, so they never stop
   pkill -u "$USER" -x hotcorner 2>/dev/null
 fi
 BIN="$HOME/.local/bin"
-CONF="${XDG_CONFIG_HOME:-$HOME/.config}/linux-utilities/hot-corners.conf"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/xfce-macos/hot-corners.conf"
 
 # what a corner does (the actions of the settings page)
 command_for() {

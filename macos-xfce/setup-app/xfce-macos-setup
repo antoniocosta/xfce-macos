@@ -40,7 +40,7 @@ class Setup:
         w.set_default_size(620, 640)
         w.connect("destroy", self.quit)
         try:
-            w.set_icon(GdkPixbuf.Pixbuf.new_from_file_at_size(os.path.join(HERE, "icon", "linux-utilities-setup.svg"), 128, 128))
+            w.set_icon(GdkPixbuf.Pixbuf.new_from_file_at_size(os.path.join(HERE, "icon", "xfce-macos-setup.svg"), 128, 128))
         except Exception:
             pass
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -50,7 +50,7 @@ class Setup:
         head = Gtk.Box(spacing=14)
         try:
             img = Gtk.Image.new_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_size(
-                os.path.join(HERE, "icon", "linux-utilities-setup.svg"), 64, 64))
+                os.path.join(HERE, "icon", "xfce-macos-setup.svg"), 64, 64))
             head.pack_start(img, False, False, 0)
         except Exception:
             pass

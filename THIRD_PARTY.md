@@ -13,4 +13,3 @@ project from its own source at install time, under its own licence.
 | [Plank Reloaded](https://github.com/zquestz/plank-reloaded) | the dock | GPL-3.0 | its apt repository |
 | [Touchégg](https://github.com/JoseExposito/touchegg), rofi, xfce4-appmenu-plugin, Inter | gestures, Spotlight/Launchpad, global menu, font | various | Ubuntu/Mint packages |
 
-net-badge's idea and colour tiers follow [macos-network-badge](https://github.com/Someniak/macos-network-badge).

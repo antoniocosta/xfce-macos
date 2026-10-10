@@ -137,7 +137,8 @@ wait_until 3 bash -c "[ \$(curdesk) = 1 ]"; sleep 0.3
 xdotool mousemove 700 400; sleep 0.2; xdotool mousemove 700 899
 wait_until 2 mapped "fullscreen dock helper"
 check "the app gives up the focus (the dock shows above it)" bash -c "[ \$(active) != $(hex "$A") ]"
-xdotool mousemove 700 300; sleep 0.8
+xdotool mousemove 700 300
+wait_until 3 bash -c "[ \$(active) = $(hex "$A") ]"
 eq "moving away gives it back"            "$(active)" "$(hex "$A")"
 
 t_begin "show-desktop: per desktop, like macOS"

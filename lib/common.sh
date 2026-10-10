@@ -5,7 +5,7 @@
 BIN="$HOME/.local/bin"
 SRC="$HOME/.local/src"
 AUTOSTART="$HOME/.config/autostart"
-TAG="linux-utilities"            # marks the blocks we add to files we share with other tools
+TAG="xfce-macos"            # marks the blocks we add to files we share with other tools
 export PATH="$BIN:$PATH"
 
 info()    { printf '\033[1;34m[INFO]\033[0m %s\n' "$*"; }
@@ -25,11 +25,11 @@ need() {  # need COMMAND PACKAGE: stop with an apt hint when a command is missin
 
 # ---- change record (for --restore) -------------------------------------------------------
 # The first time an installer step changes something, it records how to put it back, in
-# ${XDG_STATE_HOME:-~/.local/state}/linux-utilities/ (file "changes" plus "backup/"). Each thing is
+# ${XDG_STATE_HOME:-~/.local/state}/xfce-macos/ (file "changes" plus "backup/"). Each thing is
 # recorded once only, so a restore returns to what the machine was before the FIRST install; a
 # re-run adds nothing. lib/restore.sh reads the record. Fields are separated by US (0x1f).
 
-state_dir() { echo "${XDG_STATE_HOME:-$HOME/.local/state}/linux-utilities"; }
+state_dir() { echo "${XDG_STATE_HOME:-$HOME/.local/state}/xfce-macos"; }
 
 rec() {  # rec KIND FIELD...: append one record
     local IFS=$'\x1f' d; d="$(state_dir)"

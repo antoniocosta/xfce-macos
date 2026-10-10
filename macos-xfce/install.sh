@@ -5,8 +5,7 @@
 # Makes Linux Mint 22.x Xfce look and behave like macOS, as lightly as possible: Cmd-key
 # shortcuts (Toshy), a menu bar with a global menu, a dock, Spotlight and Launchpad (rofi),
 # Mission Control, hot corners, 3-finger desktop swipes (Touchégg) with the
-# macOS slide, a macOS-like Cmd+Tab, the volume click, automatic brightness on Macs, and
-# the SSH key unlocked from the login keyring like the Keychain. Each part has its own folder
+# macOS slide, a macOS-like Cmd+Tab, the volume click and automatic brightness on Macs. Each part has its own folder
 # here and can also be installed alone with its install.sh. See the README for the full list.
 #
 # Usage:
@@ -57,7 +56,7 @@ setup_packages() {
         zram-tools                                   # compressed swap in RAM
     )
     local d p
-    for d in hotcorner desktop-slide volume-feedback disk-label auto-brightness ssh-keyring fullscreen mission-control settings setup-app; do
+    for d in hotcorner desktop-slide volume-feedback disk-label auto-brightness fullscreen mission-control settings setup-app; do
         while read -r p; do pkgs+=("$p"); done < <(packages_of "$HERE/$d")
     done
     is_mac    && pkgs+=(mbpfan)                      # MacBook fan control
@@ -371,7 +370,7 @@ setup_window_manager() {
     # One desktop to start with, like macOS: more come from Mission Control (+, or dragging a window
     # onto it) and stay until removed there. Only on the first run, and only while every window is
     # still on the first desktop (a fresh install); after that the number is yours.
-    local mark="$HOME/.config/linux-utilities/desktops-set"
+    local mark="$HOME/.config/xfce-macos/desktops-set"
     if [[ ! -f "$mark" ]]; then
         if ! wmctrl -l | awk '$2 > 0 {found=1} END {exit !found}'; then
             xfset xfwm4 /general/workspace_count int 1
@@ -522,8 +521,6 @@ setup_helpers() {
 
     local u
     for u in mission-control hotcorner desktop-slide volume-feedback auto-brightness fullscreen settings setup-app; do "$HERE/$u/install.sh"; done
-    # the SSH key unlocked at login from the login keyring, like the macOS Keychain
-    [[ -f "$HOME/.ssh/id_ed25519" ]] && "$HERE/ssh-keyring/install.sh"
     return 0
 }
 

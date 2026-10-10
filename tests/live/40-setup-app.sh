@@ -17,7 +17,7 @@ cat > "$LIVE_TMP/drive.py" <<'PY'
 import os, sys
 sys.path.insert(0, os.environ["SETUP"])
 import importlib.machinery, importlib.util
-loader = importlib.machinery.SourceFileLoader("app", os.path.join(os.environ["SETUP"], "linux-utilities-setup"))
+loader = importlib.machinery.SourceFileLoader("app", os.path.join(os.environ["SETUP"], "xfce-macos-setup"))
 spec = importlib.util.spec_from_loader("app", loader); app = importlib.util.module_from_spec(spec); loader.exec_module(app)
 import setup_core as core
 s = app.Setup(); s.win.show_all()

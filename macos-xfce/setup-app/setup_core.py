@@ -3,7 +3,7 @@ import os
 import re
 
 HERE = os.path.dirname(os.path.realpath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))          # the checkout: .../linux-utilities
+ROOT = os.path.dirname(os.path.dirname(HERE))          # the checkout: .../xfce-macos
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
@@ -16,15 +16,21 @@ def installer(root=None):
     return os.environ.get("LU_SETUP_INSTALLER") or os.path.join(root or ROOT, "macos-xfce", "install.sh")
 
 
-# the optional extras shown as checkboxes: (folder under extras/, what the user reads)
+# the optional extras shown as checkboxes: (folder in the sibling linux-utilities checkout, what the user reads).
+# They live in https://github.com/antoniocosta/linux-utilities; the boxes appear when it is cloned next to this one.
 EXTRAS = [
     ("net-badge", "Network latency in the menu bar"),
     ("vpntray", "VPN panel in the menu bar (AdGuard VPN)"),
+    ("ssh-keyring", "SSH key unlocked at login from the keyring"),
 ]
 
 
+def extras_root(root=None):
+    return os.environ.get("LU_EXTRAS_ROOT") or os.path.join(os.path.dirname(root or ROOT), "linux-utilities")
+
+
 def available_extras(root=None):
-    base = os.path.join(root or ROOT, "extras")
+    base = extras_root(root)
     return [(d, label) for d, label in EXTRAS if os.path.isfile(os.path.join(base, d, "install.sh"))]
 
 
@@ -39,7 +45,7 @@ def install_commands(trim=False, english=False, extras=(), root=None):
         main.append("--english-only")
     cmds.append(main)
     for name in extras:
-        cmds.append(["bash", os.path.join(root or ROOT, "extras", name, "install.sh")])
+        cmds.append(["bash", os.path.join(extras_root(root), name, "install.sh")])
     return cmds
 
 

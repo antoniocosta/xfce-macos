@@ -18,7 +18,8 @@ class Commands(unittest.TestCase):
     def test_options_become_flags_and_extras_follow(self):
         cmds = core.install_commands(trim=True, english=True, extras=["net-badge", "vpntray"], root="/r")
         self.assertEqual(cmds[1], ["bash", "/r/macos-xfce/install.sh", "--trim", "--english-only"])
-        self.assertEqual(cmds[2:], [["bash", "/r/extras/net-badge/install.sh"], ["bash", "/r/extras/vpntray/install.sh"]])
+        self.assertEqual(cmds[2:], [["bash", "/linux-utilities/net-badge/install.sh"],
+                                    ["bash", "/linux-utilities/vpntray/install.sh"]])
 
     def test_restore_variants(self):
         self.assertEqual(core.restore_commands(root="/r"), [["bash", "/r/macos-xfce/install.sh", "--restore", "--yes"]])
@@ -47,10 +48,11 @@ class Output(unittest.TestCase):
 
     def test_extras_listed_only_when_present(self):
         with tempfile.TemporaryDirectory() as d:
-            os.makedirs(os.path.join(d, "extras", "net-badge"))
-            open(os.path.join(d, "extras", "net-badge", "install.sh"), "w").close()
-            os.makedirs(os.path.join(d, "extras", "vpntray"))      # no install.sh
-            self.assertEqual([n for n, _ in core.available_extras(d)], ["net-badge"])
+            here = os.path.join(d, "xfce-macos")
+            os.makedirs(os.path.join(d, "linux-utilities", "net-badge"))
+            open(os.path.join(d, "linux-utilities", "net-badge", "install.sh"), "w").close()
+            os.makedirs(os.path.join(d, "linux-utilities", "vpntray"))      # no install.sh
+            self.assertEqual([n for n, _ in core.available_extras(here)], ["net-badge"])
 
 
 if __name__ == "__main__":

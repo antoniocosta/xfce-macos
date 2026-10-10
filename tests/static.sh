@@ -31,7 +31,7 @@ check "touchegg.conf is XML" python3 -I -c "import xml.dom.minidom,sys; xml.dom.
     macos-xfce/files/.config/touchegg/touchegg.conf
 check "every installer is executable" bash -c 'for f in $(git ls-files "*install.sh"); do [[ -x $f ]] || exit 1; done'
 check "every program the installers copy is executable" bash -c '
-    for f in macos-xfce/*/* extras/*/*; do
+    for f in macos-xfce/*/*; do
         [[ -f $f ]] && head -1 "$f" | grep -q "^#!" && [[ ! -x $f ]] && { echo "$f"; exit 1; }
     done; exit 0'
 
@@ -40,7 +40,7 @@ check "no private repo names, hosts or accounts" bash -c \
     '! git grep -qIiE "scriptsmisc|fleet|peekr|herdr|abmc|air12|uncorp|gmx\\." -- . ":!tests/static.sh"'
 
 t_begin "README covers every part"
-for d in macos-xfce/*/ extras/*/; do
+for d in macos-xfce/*/; do
     [[ -f "$d/install.sh" ]] || continue
     n="$(basename "$d")"
     check "README has a section for $n" grep -q "^## $n\$" README.md

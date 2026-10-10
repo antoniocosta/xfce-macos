@@ -1,4 +1,4 @@
-# Linux Utilities
+# xfce-macos
 
 Make **Linux Mint Xfce** feel like **macOS**, with as little CPU and memory as possible: every part is
 built with performance and a low footprint in mind (see [Light by design](#macos-xfce)). It's
@@ -7,9 +7,10 @@ fits. The goal is that someone coming from a Mac doesn't have to relearn anythin
 shortcuts, gestures, menu bar, dock, Mission Control, hot corners, and settings with the same
 names, where a Mac user would look for them.
 
-`macos-xfce/` is the core: one installer sets up everything macOS does. Each part lives in
-its own folder inside it and can also be installed alone. `extras/` holds things macOS
-doesn't do out of the box.
+`macos-xfce/` is the whole thing: one installer sets up everything macOS does. Each part lives in
+its own folder inside it and can also be installed alone. Small tools that aren't about the macOS
+feel (a network latency badge, a VPN panel, the SSH key from the keyring) live next to it in
+[linux-utilities](https://github.com/antoniocosta/linux-utilities).
 
 ```
 macos-xfce/          the core: ./macos-xfce/install.sh sets up all of it
@@ -18,14 +19,10 @@ macos-xfce/          the core: ./macos-xfce/install.sh sets up all of it
   volume-feedback/   ├ the volume click
   disk-label/        ├ "Macintosh HD" with free space on the desktop
   auto-brightness/   ├ automatic screen and keyboard brightness
-  ssh-keyring/       ├ SSH key unlocked at login, like the Keychain
   fullscreen/        ├ full screen: green button, its own Space, menu bar at the top edge
   mission-control/   ├ Mission Control: the Spaces bar on top, the current desktop's windows below
   settings/          ├ macOS-style settings pages in Xfce's Settings Manager
   setup-app/         └ a small window to install, update or restore
-extras/
-  net-badge/         network latency in the menu bar
-  vpntray/           top-bar panel for a VPN command-line tool
 lib/common.sh        helpers shared by the installers
 ```
 
@@ -40,10 +37,6 @@ lib/common.sh        helpers shared by the installers
 | [mission-control](#mission-control) | Mission Control: every desktop in a Spaces bar on top, the current desktop's windows below; drag windows between desktops, + and × to add and remove desktops. |
 | [settings](#settings) | Settings Manager pages named like macOS's System Settings: **Desktop & Dock** (Dock size, magnification, position, auto-hide, **Hot Corners…**, sliding between desktops), **Trackpad**, **Displays** and **Keyboard Brightness** (automatic brightness). |
 | [fullscreen](#fullscreen) | Full screen like macOS: the green button and Cmd+Ctrl+F go full screen in a Space of its own; at the top edge the menu bar and title bar slide in. |
-| [ssh-keyring](#ssh-keyring) | Unlocks your SSH key at login from the login keyring, like the macOS Keychain (only when you have a key). |
-| **Extras** | |
-| [net-badge](#net-badge) | Network latency in the menu bar ("● 24 ms"), with a popover. |
-| [vpntray](#vpntray) | Top-bar VPN panel in the style of the macOS menu-bar app: connect toggle, fastest, searchable locations, login. Unofficial. |
 
 Tested on Linux Mint 22.3 Xfce (X11) on a MacBook Air mid 2012 (Intel HD 4000, 8 GB).
 Nothing is tied to that machine: Mac-only parts (fan control, light sensor, Apple trackpad
@@ -52,8 +45,8 @@ thresholds) switch themselves on only where the hardware is there.
 ## Install
 
 ```
-git clone https://github.com/antoniocosta/linux-utilities.git
-cd linux-utilities
+git clone https://github.com/antoniocosta/xfce-macos.git
+cd xfce-macos
 ./macos-xfce/install.sh                  # everything (asks for sudo once, for packages)
 ```
 
@@ -70,12 +63,12 @@ Options, all off by default:
 ```
 
 One part on its own: its `install.sh`, for example `./macos-xfce/hotcorner/install.sh` or
-`./extras/net-badge/install.sh`.
+its `install.sh`.
 
 Everything is safe to re-run: each step checks before it changes anything. Programs go in
 `~/.local/bin`, settings in your Xfce settings and `~/.config`. Where a file is shared with other
 tools (`gtk.css`, `~/.xsessionrc`, Firefox's `user.js`, Toshy's config), the change sits in a
-block marked `linux-utilities` that a re-run replaces instead of duplicating.
+block marked `xfce-macos` that a re-run replaces instead of duplicating.
 
 ## Footprint
 
@@ -108,8 +101,7 @@ The rules every part follows:
   notifications and the menu bar are Xfce's, only configured. Nothing replaces the window manager
   or the panel.
 - **No resident process unless it must be one.** Helpers are a few lines of shell, Python or C
-  and sleep until something happens: volume-feedback waits on audio events, net-badge runs from
-  the panel's timer, settings dialogs only exist while open.
+  and sleep until something happens: volume-feedback waits on audio events, settings dialogs only exist while open.
 - **When something must poll, it polls cheaply.** hotcorner asks X for the pointer position
   5 times a second and speeds up only near a corner (3 MB, about 0.01 % CPU).
 - **The heaviest part is optional.** The desktop slide needs a compositor (picom, 0.3 % CPU on
@@ -190,7 +182,7 @@ All of it at once: `./macos-xfce/install.sh --restore` (see [Restore](#restore))
 - Theme, menu bar, shortcuts: Settings → Appearance / Window Manager / Panel / Keyboard.
 - Desktop slide: `desktop-slide off`.
 - Helpers: delete their entries in `~/.config/autostart/` and log out.
-- Marked blocks: delete the `linux-utilities` blocks from `~/.config/gtk-3.0/gtk.css`,
+- Marked blocks: delete the `xfce-macos` blocks from `~/.config/gtk-3.0/gtk.css`,
   `~/.xsessionrc`, the Firefox profile's `user.js` and `~/.config/toshy/toshy_config.py`.
 
 ---
@@ -295,7 +287,7 @@ as you make them. A page is just a window: nothing runs after you close it.
 | Page | What's there |
 |---|---|
 | **Desktop & Dock** | Dock **Size**, **Magnification** (and its size), **Position on screen** (Left, Bottom, Right), **Automatically hide and show the Dock**, **Slide between desktops**, and the **Hot Corners…** button |
-| **Hot Corners…** | A pop-up per screen corner: Mission Control, Desktop, Launchpad, Lock Screen, Put Display to Sleep, or nothing. Saved in `~/.config/linux-utilities/hot-corners.conf`; the corners restart on OK |
+| **Hot Corners…** | A pop-up per screen corner: Mission Control, Desktop, Launchpad, Lock Screen, Put Display to Sleep, or nothing. Saved in `~/.config/xfce-macos/hot-corners.conf`; the corners restart on OK |
 | **Trackpad** | **Tap to click**, **Natural scrolling** (as on a Mac), **Tracking speed**, **Scrolling speed** (how far your fingers travel per scroll step; Xfce has no window for it, so it is saved and re-applied at every login) |
 | **Displays** | **Automatically adjust brightness**, only on computers with an ambient light sensor |
 | **Keyboard Brightness** | **Adjust keyboard brightness in low light**, only with a keyboard backlight |
@@ -314,7 +306,7 @@ macos-settings --apply                                                  (at logi
 ## setup-app
 
 A small window for people who'd rather not use the terminal: **Make Xfce feel like macOS** (in your
-applications menu after install, or run `macos-xfce/setup-app/linux-utilities-setup`). Tick what you
+applications menu after install, or run `macos-xfce/setup-app/xfce-macos-setup`). Tick what you
 want (the core is always included; the services-and-apps clean-up and English-only are optional,
 and so are the extras), press **Install**, and watch what the installer does in the log below.
 **Restore…** previews what would be undone, undoes the changes, or undoes them and removes the
@@ -364,55 +356,10 @@ full-screen windows on their own desktop (no Spaces).
 
 ---
 
-## ssh-keyring
-
-On macOS the Keychain unlocks your SSH key when you log in. This does the same with the login
-keyring: the passphrase is stored there once, and at login `ssh-keyring unlock` adds the key to
-the session's ssh-agent. The key file stays encrypted on disk, and the passphrase never appears
-on a command line.
-
-```
-./macos-xfce/ssh-keyring/install.sh [KEY]   # default ~/.ssh/id_ed25519
-ssh-keyring store                  # once: type the passphrase; it's checked, then saved
-ssh-keyring forget                 # remove it from the keyring
-```
-
----
-
-# Extras
-
-## net-badge
-
-A coloured dot and the current latency in the menu bar, measured every 5 seconds as one TCP
-handshake to Apple's captive-portal server. Colours follow
-[Network Badge](https://github.com/Someniak/macos-network-badge)'s tiers (< 30 / 80 / 150 /
-300 ms). The tooltip and a click popover show the connection, Wi-Fi name, a sparkline of the
-last 3 minutes and min/avg/max; a notification appears when the connection turns poor. Runs in
-Xfce's Generic Monitor plugin, so there's no extra process between measurements.
-
-## vpntray
-
-A top-bar shield (outline: off, filled: on) with a compact panel like the macOS VPN menu-bar
-apps: a connect switch with the status and location, a "Fastest location" row, a searchable list
-of locations (flag, city, ping), your account with Log out, and a login form when logged out.
-Errors show inline; the panel hides when it loses focus. Click the shield and choose
-*Open panel* (or middle-click it; running `vpntray` also opens it).
-
-It drives the AdGuard VPN command-line tool (`adguardvpn-cli`, installed separately) and is
-**unofficial and not affiliated with AdGuard**. Python 3 + GTK3, about 30 MB, 0% CPU when idle:
-no timers; the status is read at start, when the panel opens and after each action. Your
-password goes only to the tool's standard input; nothing is stored. Connecting in TUN mode needs
-root, so vpntray points `SUDO_ASKPASS` at a small password dialog (zenity). No sudoers rule.
-
-`./extras/vpntray/install.sh`. Tests, without a VPN or display (a fake command-line tool):
-`python3 extras/vpntray/test_vpntray.py`.
-
----
-
 ## Restore
 
 The installers write down, the first time they change something, how to put it back. The record is
-`${XDG_STATE_HOME:-~/.local/state}/linux-utilities/` (a `changes` file and a `backup/` folder). Each
+`${XDG_STATE_HOME:-~/.local/state}/xfce-macos/` (a `changes` file and a `backup/` folder). Each
 thing is recorded once only, so a restore returns to what the machine was **before the first
 install**; re-running an installer adds nothing. Every part's own `install.sh` records into the same
 place.
@@ -428,7 +375,7 @@ What a restore undoes:
 
 - Xfce settings (xfconf) and GNOME/dconf keys: the previous value is set back, or the setting is
   removed / reset to its default if it did not exist before. The dock's settings too.
-- Marked `linux-utilities` blocks (`gtk.css`, `~/.xsessionrc`, Firefox's `user.js`, Toshy's config):
+- Marked `xfce-macos` blocks (`gtk.css`, `~/.xsessionrc`, Firefox's `user.js`, Toshy's config):
   removed; a file the installer created and that is now empty is deleted.
 - Files and folders the installers created (programs, themes, cursors, icons, autostart entries,
   configs, dock items): deleted. Ones they replaced: the original is put back from the backup.
