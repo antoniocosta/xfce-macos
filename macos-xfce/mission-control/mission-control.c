@@ -32,6 +32,8 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <strings.h>
+#include <jpeglib.h>   /* after stdio.h */
 
 #define MAX_WIN 256
 #define MAX_DESK 32
@@ -67,7 +69,7 @@ static cairo_surface_t *snap[MAX_DESK];     /* desktop pictures, TW x THUMB_H */
 static long snap_due = -1, snap_desk = -1;
 
 static int is_open;
-static cairo_surface_t *bg;                 /* blurred screen behind it all */
+static cairo_surface_t *bg;                 /* the desktop's wallpaper, while open */
 static struct win wins[MAX_WIN];
 static int nwins;
 static int cur_items[MAX_WIN], nitems;      /* indexes into wins[] of the current desktop's windows */
@@ -280,6 +282,77 @@ static void drop_snapshots(void) {   /* desktops were renumbered: pictures no lo
     for (int i = 0; i < MAX_DESK; i++) if (snap[i]) { cairo_surface_destroy(snap[i]); snap[i] = NULL; }
 }
 
+/* ---- the wallpaper (the background, as on macOS) ------------------------------------------ */
+
+/* Xfce's wallpaper for desktop d: /backdrop/screen0/monitor<output>/workspace<d>/last-image,
+ * preferring a named output (eDP-1) over Xfce's old numbered ones */
+static int wallpaper_path(long d, char *out, size_t n) {
+    FILE *f = popen("xfconf-query -c xfce4-desktop -l -v 2>/dev/null", "r");
+    if (!f) return 0;
+    char line[1024], want[64], fallback[1024] = "";
+    snprintf(want, sizeof want, "/workspace%ld/last-image ", d);
+    out[0] = 0;
+    while (fgets(line, sizeof line, f)) {
+        char *hit = strstr(line, want), *mon = strstr(line, "/monitor");
+        if (!hit || !mon || strncmp(line, "/backdrop/screen0/", 18)) continue;
+        char *val = hit + strlen(want);
+        while (*val == ' ') val++;
+        val[strcspn(val, "\n")] = 0;
+        int numbered = mon[8] >= '0' && mon[8] <= '9';
+        if (!numbered && !out[0]) snprintf(out, n, "%s", val);
+        else if (numbered && !fallback[0]) snprintf(fallback, sizeof fallback, "%s", val);
+    }
+    pclose(f);
+    if (!out[0]) snprintf(out, n, "%s", fallback);
+    return out[0] != 0;
+}
+
+static cairo_surface_t *load_jpeg(const char *path) {   /* decoded at the smallest size >= screen */
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    struct jpeg_decompress_struct ci;
+    struct jpeg_error_mgr jerr;
+    ci.err = jpeg_std_error(&jerr);
+    jpeg_create_decompress(&ci);
+    jpeg_stdio_src(&ci, f);
+    if (jpeg_read_header(&ci, TRUE) != JPEG_HEADER_OK) { jpeg_destroy_decompress(&ci); fclose(f); return NULL; }
+    ci.out_color_space = JCS_RGB;
+    ci.scale_num = 1;
+    ci.scale_denom = 1;
+    for (int den = 8; den > 1; den /= 2)
+        if (ci.image_width / den >= (unsigned)SW && ci.image_height / den >= (unsigned)SH) { ci.scale_denom = den; break; }
+    jpeg_start_decompress(&ci);
+    cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_RGB24, ci.output_width, ci.output_height);
+    unsigned char *px = cairo_image_surface_get_data(s), *row = malloc(ci.output_width * 3);
+    int stride = cairo_image_surface_get_stride(s);
+    while (row && ci.output_scanline < ci.output_height) {
+        unsigned y = ci.output_scanline;
+        jpeg_read_scanlines(&ci, &row, 1);
+        uint32_t *o = (uint32_t *)(px + y * stride);
+        for (unsigned x = 0; x < ci.output_width; x++)
+            o[x] = (uint32_t)row[x * 3] << 16 | (uint32_t)row[x * 3 + 1] << 8 | row[x * 3 + 2];
+    }
+    free(row);
+    cairo_surface_mark_dirty(s);
+    jpeg_finish_decompress(&ci);
+    jpeg_destroy_decompress(&ci);
+    fclose(f);
+    return s;
+}
+
+static cairo_surface_t *load_wallpaper(long d) {
+    char path[1024];
+    if (!wallpaper_path(d, path, sizeof path)) return NULL;
+    size_t n = strlen(path);
+    if (n > 4 && !strcasecmp(path + n - 4, ".png")) {
+        cairo_surface_t *s = cairo_image_surface_create_from_png(path);
+        if (cairo_surface_status(s) == CAIRO_STATUS_SUCCESS) return s;
+        cairo_surface_destroy(s);
+        return NULL;
+    }
+    return load_jpeg(path);
+}
+
 /* ---- layout ------------------------------------------------------------------------------ */
 
 static double bar_h(void) { return BAR_TOP + THUMB_H + LABEL_H; }
@@ -465,15 +538,20 @@ static void draw(void) {
     cairo_surface_t *xs = cairo_xlib_surface_create(dpy, ov, DefaultVisual(dpy, DefaultScreen(dpy)), SW, SH);
     cairo_t *cr = cairo_create(xs);
     cairo_push_group(cr);                                /* draw off screen, show at once */
-    if (bg) {                                            /* the screen, blurred and dimmed */
+    cairo_set_source_rgb(cr, 0.12, 0.12, 0.13);
+    cairo_paint(cr);
+    if (bg) {                                            /* the wallpaper, filling the screen */
+        double iw = cairo_image_surface_get_width(bg), ih = cairo_image_surface_get_height(bg);
+        double s = fmax(SW / iw, SH / ih);
         cairo_save(cr);
-        cairo_scale(cr, (double)SW / cairo_image_surface_get_width(bg), (double)SH / cairo_image_surface_get_height(bg));
+        cairo_translate(cr, (SW - iw * s) / 2, (SH - ih * s) / 2);
+        cairo_scale(cr, s, s);
         cairo_set_source_surface(cr, bg, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BILINEAR);
+        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
         cairo_paint(cr);
         cairo_restore(cr);
     }
-    cairo_set_source_rgba(cr, 0, 0, 0, 0.40);
+    cairo_set_source_rgba(cr, 0, 0, 0, 0.15);
     cairo_paint(cr);
     cairo_rectangle(cr, 0, 0, SW, bar_h());              /* the Spaces bar */
     cairo_set_source_rgba(cr, 0, 0, 0, 0.25);
@@ -567,9 +645,8 @@ static void update_hover(int x, int y) {
 static void open_mc(void) {
     if (is_open) return;
     cur = get_card(root, A_CURDESK, 0);
-    cairo_surface_t *shot = capture(SW / 12, SH / 12);   /* blurred background */
     if (bg) cairo_surface_destroy(bg);
-    bg = shot;
+    bg = load_wallpaper(cur);
     take_snapshot(cur);                                  /* the current desktop, as it is now */
     XCompositeRedirectSubwindows(dpy, root, CompositeRedirectAutomatic);   /* window images, even
                                                         with no compositor or one that steps aside */
@@ -603,6 +680,7 @@ static void close_mc(Window go_to, long switch_to) {
     XUngrabKeyboard(dpy, CurrentTime);
     XUnmapWindow(dpy, ov);
     free_wins();
+    if (bg) { cairo_surface_destroy(bg); bg = NULL; }
     XCompositeUnredirectSubwindows(dpy, root, CompositeRedirectAutomatic);
     if (switch_to >= 0 && switch_to != cur) switch_desktop(switch_to);
     if (go_to != None) activate(go_to);
