@@ -596,6 +596,14 @@ int main(int argc, char **argv) {
                     trim_at = now_ms() + SLIDE_CLEAR_MS;                 /* a Space may have emptied */
                 if (e.xproperty.window == root && e.xproperty.atom == A_CLIENTS) refresh_clients();
                 else if (e.xproperty.atom == A_STATE) on_state(e.xproperty.window);
+                else if (e.xproperty.atom == A_ORIGIN || e.xproperty.atom == A_DESK) {
+                    /* Mission Control may reorder or remove desktops: follow it */
+                    struct client *c = find(e.xproperty.window);
+                    if (c && c->origin >= 0) {
+                        long o = get_card(c->w, A_ORIGIN, -1);
+                        if (o >= 0) { c->origin = (int)o; c->space = (int)desk_of(c->w); }
+                    }
+                }
                 else if (e.xproperty.atom == A_EXTENTS) { struct client *c = find(e.xproperty.window); if (c) update_geo(c); }
             } else if (e.type == Expose && e.xexpose.window == bar && e.xexpose.count == 0) {
                 draw_bar();

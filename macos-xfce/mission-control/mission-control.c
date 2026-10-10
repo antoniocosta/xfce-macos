@@ -4,7 +4,8 @@
  * app); below it, the windows of the current desktop, side by side. Click a window to go to it,
  * click a desktop to switch to it, drag a window onto a desktop to move it there (or onto + to give
  * it a new desktop), + adds a desktop, the x on a hovered desktop removes it (its windows go to the
- * neighbouring desktop). Esc, F3, Ctrl+Up or a click on empty space closes it.
+ * neighbouring desktop), and dragging a desktop along the bar reorders the desktops (their windows
+ * go with them). Esc, F3, Ctrl+Up or a click on empty space closes it.
  *
  * Usage: mission-control            toggle (asks the running copy; opens once if none runs)
  *        mission-control --open     open (3-finger swipe up); --close: close (swipe down)
@@ -76,6 +77,7 @@ static long cur;
 static double plus_x, plus_y, plus_w, plus_h;
 static int hover_item = -1, hover_desk = -1, hover_close = 0, hover_plus = 0;
 static int press_item = -1, dragging = 0;
+static int press_desk = -1, desk_dragging = 0;    /* reordering desktops in the bar */
 static int press_x, press_y, ptr_x, ptr_y;
 
 static long now_ms(void) {
@@ -369,8 +371,9 @@ static int desk_is_space(int d) {
     return 0;
 }
 
-static void draw_desk(cairo_t *cr, int d) {
-    struct desk *k = &desks[d];
+static void draw_desk(cairo_t *cr, int d, double at_x) {
+    struct desk kk = desks[d], *k = &kk;
+    k->x = at_x;
     cairo_save(cr);
     rounded(cr, k->x, k->y, k->w, k->h, 6);
     cairo_clip(cr);
@@ -406,7 +409,8 @@ static void draw_desk(cairo_t *cr, int d) {
     }
     cairo_restore(cr);
     int target = dragging && hover_desk == d;
-    if (d == cur || d == hover_desk) {
+    if (desk_dragging && d != press_desk) target = 0;
+    if (d == cur || (d == hover_desk && !desk_dragging) || (desk_dragging && d == press_desk)) {
         rounded(cr, k->x - 2, k->y - 2, k->w + 4, k->h + 4, 7);
         if (target) cairo_set_source_rgba(cr, 0.25, 0.55, 1, 1);
         else cairo_set_source_rgba(cr, 1, 1, 1, d == cur ? 0.9 : 0.5);
@@ -417,7 +421,7 @@ static void draw_desk(cairo_t *cr, int d) {
     desk_name(d, name, sizeof name);
     cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
     text_centered(cr, name, k->x + k->w / 2, k->y + k->h + 18, 12, k->w + GAP - 4);
-    if (d == hover_desk && !dragging && ndesk > 1) {     /* the x to remove it, top left */
+    if (d == hover_desk && !dragging && !desk_dragging && ndesk > 1) {   /* the x to remove it, top left */
         cairo_arc(cr, k->x, k->y, 9, 0, 2 * M_PI);
         cairo_set_source_rgba(cr, hover_close ? 0.9 : 0.75, hover_close ? 0.9 : 0.75, hover_close ? 0.9 : 0.75, 1);
         cairo_fill(cr);
@@ -427,6 +431,33 @@ static void draw_desk(cairo_t *cr, int d) {
         cairo_move_to(cr, k->x + 3.5, k->y - 3.5); cairo_line_to(cr, k->x - 3.5, k->y + 3.5);
         cairo_stroke(cr);
     }
+}
+
+/* while a desktop is dragged: the slot it would land in */
+static int drop_slot(void) {
+    int slot = 0;
+    for (int d = 0; d < ndesk; d++)
+        if (d != press_desk && desks[d].x + desks[d].w / 2 < ptr_x) slot++;
+    return slot;
+}
+
+static void draw_desks(cairo_t *cr) {
+    if (!desk_dragging) {
+        for (int d = 0; d < ndesk; d++) draw_desk(cr, d, desks[d].x);
+        return;
+    }
+    int slot = drop_slot(), s = 0;
+    for (int d = 0; d < ndesk; d++) {                    /* the others make room */
+        if (d == press_desk) continue;
+        if (s == slot) s++;
+        draw_desk(cr, d, desks[s].x);
+        s++;
+    }
+    double w = desks[press_desk].w;                      /* the dragged one follows the pointer */
+    cairo_push_group(cr);
+    draw_desk(cr, press_desk, ptr_x - w / 2);
+    cairo_pop_group_to_source(cr);
+    cairo_paint_with_alpha(cr, 0.9);
 }
 
 static void draw(void) {
@@ -447,7 +478,7 @@ static void draw(void) {
     cairo_rectangle(cr, 0, 0, SW, bar_h());              /* the Spaces bar */
     cairo_set_source_rgba(cr, 0, 0, 0, 0.25);
     cairo_fill(cr);
-    for (int d = 0; d < ndesk; d++) draw_desk(cr, d);
+    draw_desks(cr);
     rounded(cr, plus_x, plus_y, plus_w, plus_h, 8);      /* + */
     cairo_set_source_rgba(cr, 1, 1, 1, hover_plus ? (dragging ? 0.45 : 0.30) : 0.15);
     cairo_fill(cr);
@@ -554,7 +585,7 @@ static void open_mc(void) {
         XStoreName(dpy, ov, "Mission Control");
     }
     is_open = 1;
-    hover_item = hover_desk = press_item = -1; dragging = 0;
+    hover_item = hover_desk = press_item = press_desk = -1; dragging = desk_dragging = 0;
     XMapRaised(dpy, ov);
     for (int i = 0; i < 20; i++) {                      /* keys: Esc and the toggle keys close it */
         if (XGrabKeyboard(dpy, ov, True, GrabModeAsync, GrabModeAsync, CurrentTime) == GrabSuccess) break;
@@ -632,10 +663,43 @@ static void remove_desktop(int d) {
     refresh();
 }
 
+/* move desktop `from` to position `to`; windows go with their desktop */
+static void reorder_desktops(int from, int to) {
+    long n = get_card(root, A_NDESK, 1);
+    if (from < 0 || from >= n || to < 0 || to >= n || from == to) return;
+    long order[MAX_DESK], newpos[MAX_DESK];
+    int k = 0;
+    for (int d = 0; d < n; d++) if (d != from) order[k++] = d;
+    memmove(&order[to + 1], &order[to], sizeof(long) * (n - 1 - to));
+    order[to] = from;
+    for (int i = 0; i < n; i++) newpos[order[i]] = i;
+    for (int i = 0; i < nwins; i++) {
+        if (newpos[wins[i].desk] != wins[i].desk) move_to_desktop(wins[i].w, newpos[wins[i].desk]);
+        long o = get_card(wins[i].w, A_ORIGIN, -1);      /* the fullscreen utility's bookkeeping */
+        if (o >= 0 && o < n && newpos[o] != o)
+            XChangeProperty(dpy, wins[i].w, A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&newpos[o], 1);
+    }
+    cairo_surface_t *old[MAX_DESK];                      /* the pictures move too */
+    for (int d = 0; d < n; d++) old[d] = snap[d];
+    for (int d = 0; d < n; d++) snap[newpos[d]] = old[d];
+    if (newpos[cur] != cur) { cur = newpos[cur]; switch_desktop(cur); }
+    XSync(dpy, False);
+    usleep(50000);
+    refresh();
+}
+
 /* ---- events ------------------------------------------------------------------------------ */
 
 static void on_release(int x, int y) {
     update_hover(x, y);
+    if (desk_dragging) {
+        int from = press_desk, to = drop_slot();
+        desk_dragging = 0; press_desk = -1;
+        if (to != from) reorder_desktops(from, to); else draw();
+        return;
+    }
+    int pdesk = press_desk;
+    press_desk = -1;
     if (dragging) {
         Window w = wins[press_item].w;
         dragging = 0; press_item = -1;
@@ -655,7 +719,7 @@ static void on_release(int x, int y) {
     if (hover_close && hover_desk >= 0) { remove_desktop(hover_desk); return; }
     if (hover_plus) { add_desktop(None); return; }
     if (hover_item >= 0 && pressed >= 0 && cur_items[hover_item] == pressed) { close_mc(wins[pressed].w, -1); return; }
-    if (hover_desk >= 0) { close_mc(None, hover_desk); return; }
+    if (hover_desk >= 0 && hover_desk == pdesk) { close_mc(None, hover_desk); return; }
     close_mc(None, -1);
 }
 
@@ -686,8 +750,9 @@ static void handle(XEvent *e) {
         ptr_x = e->xmotion.x; ptr_y = e->xmotion.y;
         int hi = hover_item, hd = hover_desk, hc = hover_close, hp = hover_plus;
         if (press_item >= 0 && !dragging && hypot(ptr_x - press_x, ptr_y - press_y) > DRAG_PX) dragging = 1;
+        if (press_desk >= 0 && !desk_dragging && hypot(ptr_x - press_x, ptr_y - press_y) > DRAG_PX) desk_dragging = 1;
         update_hover(ptr_x, ptr_y);
-        if (dragging || hi != hover_item || hd != hover_desk || hc != hover_close || hp != hover_plus) draw();
+        if (dragging || desk_dragging || hi != hover_item || hd != hover_desk || hc != hover_close || hp != hover_plus) draw();
         break;
     }
     case ButtonPress:
@@ -695,6 +760,7 @@ static void handle(XEvent *e) {
         press_x = ptr_x = e->xbutton.x; press_y = ptr_y = e->xbutton.y;
         update_hover(press_x, press_y);
         press_item = hover_item >= 0 ? cur_items[hover_item] : -1;
+        press_desk = (hover_desk >= 0 && !hover_close && press_y < bar_h()) ? hover_desk : -1;
         break;
     case ButtonRelease:
         if (e->xbutton.button == 1) on_release(e->xbutton.x, e->xbutton.y);

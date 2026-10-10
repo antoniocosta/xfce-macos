@@ -255,6 +255,7 @@ their icons (and the title of the one under the pointer).
 - Drag a window onto a desktop to move it there, or onto **+** to give it a desktop of its own.
 - **+** adds a desktop; the **×** on a hovered desktop removes it (its windows move to the
   neighbouring desktop; on a full-screen Space it leaves full screen).
+- Drag a desktop along the Spaces bar to reorder the desktops; their windows go with them.
 
 How it stays light: one small C program that sleeps in the background (about 2 MB of its own).
 X keeps no picture of hidden desktops, so when you arrive on a desktop (an event from the window
