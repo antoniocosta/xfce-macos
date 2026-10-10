@@ -347,7 +347,17 @@ setup_window_manager() {
     section "Window manager"
     xfset xfwm4 /general/wrap_windows     bool true    # drag a window against a screen edge: it moves to the next desktop
     xfset xfwm4 /general/wrap_workspaces  bool false
-    xfset xfwm4 /general/workspace_count  int "$(xfconf-query -c xfwm4 -p /general/workspace_count 2>/dev/null | awk '{n=$1} END{print (n < 4 ? 4 : n)}')"
+    # One desktop to start with, like macOS: more come from Mission Control (+, or dragging a window
+    # onto it) and stay until removed there. Only on the first run, and only while every window is
+    # still on the first desktop (a fresh install); after that the number is yours.
+    local mark="$HOME/.config/linux-utilities/desktops-set"
+    if [[ ! -f "$mark" ]]; then
+        if ! wmctrl -l | awk '$2 > 0 {found=1} END {exit !found}'; then
+            xfset xfwm4 /general/workspace_count int 1
+            ok "One desktop, like macOS (add more in Mission Control)"
+        fi
+        mkdir -p "$(dirname "$mark")"; touch "$mark"
+    fi
     xfset xfwm4 /general/tile_on_move     bool false   # no half-screen snapping at the edges
     xfset xfwm4 /general/cycle_workspaces bool true    # Cmd+Tab lists windows of every desktop
     xfset xfwm4 /general/cycle_preview    bool false   # icons, not window previews
@@ -358,7 +368,7 @@ setup_window_manager() {
     changed="$(upsert_block "$HOME/.config/gtk-3.0/gtk.css" "/* >>> $TAG: macos-xfce */" \
         "/* <<< $TAG: macos-xfce */" "$(cat "$FILES/gtk3-overrides.css")")"
     if [[ "$changed" == changed ]]; then
-        (setsid xfwm4 --replace >/dev/null 2>&1 &)   # workspace_count is set first: a restart keeps the desktops
+        (setsid xfwm4 --replace >/dev/null 2>&1 &)   # xfwm4 keeps workspace_count current: a restart keeps the desktops
         pkill -u "$USER" -x xfce4-notifyd 2>/dev/null || true   # D-Bus restarts it on the next popup
         ok "Cmd+Tab switcher and popup styling applied (window manager restarted)"
     else

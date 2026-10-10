@@ -124,7 +124,7 @@ The rules every part follows:
 | Cmd+Space | Spotlight-style app search | rofi, `files/.config/rofi/config.rasi` |
 | Cmd+Shift+3 / 4 / 5 | full screen / area / tool, saved to `~/Pictures/Screenshots` | xfce4-screenshooter |
 | 3-finger swipe left / right / up / down, spread thumb and three fingers | previous / next desktop, Mission Control open / closed, show desktop | Touchégg, `files/.config/touchegg/touchegg.conf`; its client runs under `touchegg-client`, which restarts it if it crashes |
-| Spaces | 4 desktops; drag a window against the left/right screen edge to carry it over | Xfce's window manager (`wrap_windows`) |
+| Spaces | one desktop to start with; add more in Mission Control (+, or drag a window onto it), remove them with its ×; drag a window against the left/right screen edge to carry it to the next one | Xfce's window manager (`wrap_windows`) + [mission-control](#mission-control) |
 | a window asking for attention | takes you to its desktop (Xfce's default pulls it to yours) | Xfce `activate_action = switch` |
 | menu bar | menu · app menu (global menu) ··· status icons · volume · battery · notifications · clock | xfce4-panel + `xfce4-appmenu-plugin` |
 | Dock | Plank Reloaded: WhiteSur theme, magnification, auto-hide; Finder (Files), Launchpad, Firefox, App Store (Software Manager), System Settings, Downloads, Trash | `files/plank-dock1.dconf`; a dock you already arranged keeps its items |
