@@ -5,7 +5,10 @@
  *    instead of maximized.
  * 2. A full-screen window gets its own Space, like macOS: a new desktop after the last one, and
  *    you slide to it. Ctrl+arrows, the swipes and Mission Control reach it like any desktop.
- *    Leaving full screen takes the window back to its own desktop and removes the Space.
+ *    Leaving full screen takes the window back to its own desktop and removes the Space. A new
+ *    window that opens while you're in the full-screen app (another app, a new browser window)
+ *    goes to that desktop too, and you slide there: a Space belongs to its app alone. The app's
+ *    own dialogs (save, open, print) stay on top of it.
  * 3. In full screen, rest the pointer at the top edge and the menu bar slides in with the
  *    window's title bar below it: red closes the window, green leaves full screen (yellow is
  *    greyed out, as on macOS). The global menu shows the full-screen app's own menus.
@@ -61,7 +64,7 @@ struct client {
 static Display *dpy;
 static Window root;
 static Atom A_CLIENTS, A_ACTIVE, A_STATE, A_FULL, A_MAXV, A_MAXH, A_ABOVE, A_SKIP_TB, A_SKIP_PG,
-    A_EXTENTS, A_CLOSE, A_NAME, A_UTF8, A_DESK, A_NDESK, A_CURDESK, A_TYPE, A_TYPE_DOCK, A_SLIDE,
+    A_EXTENTS, A_CLOSE, A_NAME, A_UTF8, A_DESK, A_NDESK, A_CURDESK, A_TYPE, A_TYPE_DOCK, A_TYPE_NORMAL, A_SLIDE,
     A_MOTIF, A_ORIGIN;
 static const char *MENU_PROPS[] = {   /* what the global menu reads from the active window */
     "_GTK_UNIQUE_BUS_NAME", "_GTK_MENUBAR_OBJECT_PATH", "_GTK_APPLICATION_OBJECT_PATH",
@@ -292,16 +295,41 @@ static void leave_space(struct client *c, int gone) {
 
 /* ---- windows ----------------------------------------------------------------------------- */
 
+/* a new window opened on a full-screen app's Space: send it to the desktop the app came from and
+ * slide there (unless it's one of the app's own dialogs, which stay on top of it) */
+static void keep_space_to_its_app(Window w) {
+    long d = desk_of(w);
+    if (w == bar || d < 0 || d == 0xFFFFFFFF) return;
+    struct client *owner = NULL;
+    for (int i = 0; i < ncl; i++)
+        if (cl[i].w != w && cl[i].origin >= 0 && cl[i].full && desk_of(cl[i].w) == d) owner = &cl[i];
+    if (!owner) return;
+    unsigned long n; Atom *t = (Atom *)get_prop(w, A_TYPE, XA_ATOM, &n);
+    int normal = !t || t[0] == A_TYPE_NORMAL;
+    if (t) XFree(t);
+    Window for_w;
+    if (!normal || XGetTransientForHint(dpy, w, &for_w)) return;     /* a dialog: stays */
+    long origin = owner->origin;
+    move_to_desktop(w, origin);
+    XSync(dpy, False);
+    mark_slide(origin, "back");
+    XSync(dpy, False);
+    switch_desktop(origin);
+    activate(w);
+}
+
 static void refresh_clients(void) {
     unsigned long n; Window *list = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, &n);
     static struct client keep[MAX_CLIENTS];
-    int k = 0, left = 0;
+    Window fresh[MAX_CLIENTS];
+    int k = 0, left = 0, nfresh = 0;
     for (unsigned long i = 0; list && i < n && k < MAX_CLIENTS; i++) {
         if (list[i] == bar) continue;
         struct client *old = find(list[i]);
         if (old) keep[k] = *old;
         else {                                                   /* new window: watch it */
             XSelectInput(dpy, list[i], PropertyChangeMask | StructureNotifyMask);
+            if (ncl) fresh[nfresh++] = list[i];                 /* (not the ones there at startup) */
             keep[k].w = list[i];
             keep[k].maxed = is_maxed(list[i]);
             keep[k].full = has_state(list[i], A_FULL);
@@ -326,6 +354,7 @@ static void refresh_clients(void) {
     }
     memcpy(cl, keep, sizeof(struct client) * k);
     ncl = k;
+    for (int i = 0; i < nfresh; i++) keep_space_to_its_app(fresh[i]);
     (void)left;
 }
 
@@ -511,6 +540,7 @@ int main(int argc, char **argv) {
     A_NDESK = XInternAtom(dpy, "_NET_NUMBER_OF_DESKTOPS", False);
     A_CURDESK = XInternAtom(dpy, "_NET_CURRENT_DESKTOP", False);
     A_TYPE = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
+    A_TYPE_NORMAL = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_NORMAL", False);
     A_TYPE_DOCK = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DOCK", False);
     A_SLIDE = XInternAtom(dpy, "_MAC_SLIDE", False);
     A_MOTIF = XInternAtom(dpy, "_MOTIF_WM_HINTS", False);

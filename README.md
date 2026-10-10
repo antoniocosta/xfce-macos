@@ -285,6 +285,9 @@ macOS full screen, for every app:
 - **Its own Space.** The window moves to a new desktop right after its own, and the screen slides
   to it; Ctrl+arrows, the swipes and Mission Control reach it like any desktop. Leaving full
   screen (or closing the window) slides back to the window's own desktop and removes the Space.
+  The Space belongs to its app alone: a new window opened from it (another app from the Dock, a
+  link opening a new browser window) goes to that desktop and you slide there; the app's own
+  dialogs (save, open, print) stay on top of it.
 - **The top edge.** Rest the pointer at the top: the menu bar slides in, with the app's own
   menus, and the window's title bar below it. Red closes the window, green leaves full screen,
   yellow is greyed out (as on macOS). Move away and they hide again; an open menu keeps them.
