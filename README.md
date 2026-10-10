@@ -38,7 +38,7 @@ lib/common.sh        helpers shared by the installers
 | [disk-label](#disk-label) | A "Macintosh HD / 91 GB free" icon on the desktop, with live free space. |
 | [auto-brightness](#auto-brightness) | Screen and keyboard backlight follow the room light, like a MacBook (needs its light sensor). |
 | [mission-control](#mission-control) | Mission Control: every desktop in a Spaces bar on top, the current desktop's windows below; drag windows between desktops, + and × to add and remove desktops. |
-| [settings](#settings) | Settings Manager pages named like macOS's System Settings: **Desktop & Dock** (Dock size, magnification, position, auto-hide, **Hot Corners…**, sliding between desktops), **Trackpad**, **Displays** and **Keyboard** (automatic brightness). |
+| [settings](#settings) | Settings Manager pages named like macOS's System Settings: **Desktop & Dock** (Dock size, magnification, position, auto-hide, **Hot Corners…**, sliding between desktops), **Trackpad**, **Displays** and **Keyboard Brightness** (automatic brightness). |
 | [fullscreen](#fullscreen) | Full screen like macOS: the green button and Cmd+Ctrl+F go full screen in a Space of its own; at the top edge the menu bar and title bar slide in. |
 | [ssh-keyring](#ssh-keyring) | Unlocks your SSH key at login from the login keyring, like the macOS Keychain (only when you have a key). |
 | **Extras** | |
@@ -289,7 +289,7 @@ mission-control --open       open (3-finger swipe up)   --close: close (swipe do
 
 ## settings
 
-Where a Mac user looks for things, with the same names, in Xfce's **Settings Manager**. Changes apply
+Where a Mac user looks for things, with the same names, in Xfce's **Settings Manager**. Our entries have a blue icon, so they are easy to tell from Xfce's own (which has a Keyboard and a Display of its own); the setup window has its own entry, **Make Xfce feel like macOS**. Changes apply
 as you make them. A page is just a window: nothing runs after you close it.
 
 | Page | What's there |
@@ -298,7 +298,7 @@ as you make them. A page is just a window: nothing runs after you close it.
 | **Hot Corners…** | A pop-up per screen corner: Mission Control, Desktop, Launchpad, Lock Screen, Put Display to Sleep, or nothing. Saved in `~/.config/linux-utilities/hot-corners.conf`; the corners restart on OK |
 | **Trackpad** | **Tap to click**, **Natural scrolling** (as on a Mac), **Tracking speed**, **Scrolling speed** (how far your fingers travel per scroll step; Xfce has no window for it, so it is saved and re-applied at every login) |
 | **Displays** | **Automatically adjust brightness**, only on computers with an ambient light sensor |
-| **Keyboard** | **Adjust keyboard brightness in low light**, only with a keyboard backlight |
+| **Keyboard Brightness** | **Adjust keyboard brightness in low light**, only with a keyboard backlight |
 
 Pages whose hardware isn't there are not added. Dock settings are Plank's own (dconf), tap and
 natural scrolling go through Xfce's pointer settings (so Xfce's own Mouse and Touchpad window stays

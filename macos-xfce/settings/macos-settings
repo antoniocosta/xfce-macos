@@ -261,7 +261,7 @@ def pane_displays():
 
 def pane_keyboard():
     Gtk, _, _ = gtk()
-    win, outer, grid = build_window(Gtk, "Keyboard")
+    win, outer, grid = build_window(Gtk, "Keyboard Brightness")
     st = core.load_brightness()
     ok = core.has_keyboard_backlight() and core.has_light_sensor()
     row(Gtk, grid, 0, "Adjust keyboard brightness in low light:", switch(
