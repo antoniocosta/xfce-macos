@@ -11,10 +11,12 @@
  *        mission-control --open     open (3-finger swipe up); --close: close (swipe down)
  *        mission-control --daemon   run in the background (started at login)
  *
- * Light by design: in the background it sleeps until the window manager reports a desktop switch,
- * then takes one small snapshot of the desktop it arrived on (once the slide has finished), because
- * X keeps no image of hidden desktops; that snapshot is the desktop's picture in the Spaces bar.
- * No timers, no polling. While open it shows the windows' own composited images (XComposite).
+ * Light by design: in the background it sleeps until the window manager reports something: a
+ * desktop switch, or a window opened, closed, moved or resized on the current desktop. A second
+ * after things settle it takes one small snapshot of the current desktop, because X keeps no image
+ * of hidden desktops; that's the desktop's picture in the Spaces bar. A picture belongs to the set
+ * of windows it shows, not to a desktop number, so it survives desktops being added, removed or
+ * reordered. No periodic timers, no polling. While open it shows the windows' own composited images (XComposite).
  */
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
@@ -41,7 +43,9 @@
 #define BAR_TOP 22
 #define LABEL_H 28
 #define GAP 24
-#define SNAP_DELAY_MS 700   /* after a desktop switch: let the slide finish, then snapshot */
+#define SNAP_DELAY_MS 1000  /* after a switch or a window change: let things settle, then snapshot */
+#define MAX_SNAP 48
+#define SNAP_WINS 64
 #define DRAG_PX 6
 
 struct win {                /* a window on any desktop (for the bar) */
@@ -65,8 +69,14 @@ static int SW, SH, TW;
 static Atom A_CLIENTS, A_ACTIVE, A_DESK, A_NDESK, A_CURDESK, A_TYPE, A_TYPE_NORMAL, A_TYPE_DIALOG,
     A_STATE, A_HIDDEN, A_SKIP_TB, A_FULL, A_NAME, A_UTF8, A_ICON, A_ORIGIN, A_SEL, A_MSG;
 
-static cairo_surface_t *snap[MAX_DESK];     /* desktop pictures, TW x THUMB_H */
-static long snap_due = -1, snap_desk = -1;
+struct snap {                               /* a desktop's picture and the windows it shows */
+    cairo_surface_t *img;                   /* TW x THUMB_H */
+    Window set[SNAP_WINS];
+    int n;
+    long used;
+};
+static struct snap snaps[MAX_SNAP];
+static long snap_due = -1;
 
 static int is_open;
 static cairo_surface_t *bg;                 /* the desktop's wallpaper (server side), while open */
@@ -82,6 +92,8 @@ static int hover_item = -1, hover_desk = -1, hover_close = 0, hover_plus = 0;
 static int press_item = -1, dragging = 0;
 static int press_desk = -1, desk_dragging = 0;    /* reordering desktops in the bar */
 static int press_x, press_y, ptr_x, ptr_y;
+
+static int is_normal_window(Window w);
 
 static long now_ms(void) {
     struct timespec t;
@@ -271,16 +283,64 @@ static cairo_surface_t *capture(int w, int h) {   /* the screen as it looks now,
     return out;
 }
 
-static void take_snapshot(long d) {
-    if (d < 0 || d >= MAX_DESK) return;
-    cairo_surface_t *s = capture(TW, THUMB_H);
-    if (!s) return;
-    if (snap[d]) cairo_surface_destroy(snap[d]);
-    snap[d] = s;
+static int cmp_win(const void *a, const void *b) {
+    Window x = *(const Window *)a, y = *(const Window *)b;
+    return x < y ? -1 : x > y;
 }
 
-static void drop_snapshots(void) {   /* desktops were renumbered: pictures no longer match */
-    for (int i = 0; i < MAX_DESK; i++) if (snap[i]) { cairo_surface_destroy(snap[i]); snap[i] = NULL; }
+static int desk_set(long d, Window *out) {   /* the normal windows on desktop d, sorted */
+    unsigned long n; Window *list = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, &n);
+    int k = 0;
+    for (unsigned long i = 0; list && i < n && k < SNAP_WINS; i++)
+        if (get_card(list[i], A_DESK, -1) == d && is_normal_window(list[i])) out[k++] = list[i];
+    if (list) XFree(list);
+    qsort(out, k, sizeof(Window), cmp_win);
+    return k;
+}
+
+static int overlap(const struct snap *s, const Window *set, int n) {
+    int common = 0;
+    for (int i = 0, j = 0; i < s->n && j < n;) {
+        if (s->set[i] == set[j]) { common++; i++; j++; }
+        else if (s->set[i] < set[j]) i++; else j++;
+    }
+    return common;
+}
+
+static void take_snapshot(void) {             /* the current desktop, as it looks now */
+    Window set[SNAP_WINS];
+    int n = desk_set(get_card(root, A_CURDESK, 0), set);
+    if (!n) return;                           /* empty: the wallpaper says it all */
+    struct snap *slot = NULL;
+    for (int i = 0; i < MAX_SNAP; i++) {      /* the same windows' old picture, else a free or the oldest slot */
+        struct snap *s = &snaps[i];
+        if (s->img && s->n == n && overlap(s, set, n) == n) { slot = s; break; }
+        if (!slot || (slot->img && (!s->img || s->used < slot->used))) slot = s;
+    }
+    cairo_surface_t *img = capture(TW, THUMB_H);
+    if (!img) return;
+    if (slot->img) cairo_surface_destroy(slot->img);
+    slot->img = img;
+    memcpy(slot->set, set, sizeof(Window) * n);
+    slot->n = n;
+    slot->used = now_ms();
+}
+
+/* the picture showing (most of) the windows now on desktop d */
+static cairo_surface_t *find_snapshot(long d) {
+    Window set[SNAP_WINS];
+    int n = 0;
+    for (int i = 0; i < nwins && n < SNAP_WINS; i++) if (wins[i].desk == d) set[n++] = wins[i].w;
+    if (!n) return NULL;
+    qsort(set, n, sizeof(Window), cmp_win);
+    struct snap *best = NULL; int best_common = 0;
+    for (int i = 0; i < MAX_SNAP; i++) {
+        struct snap *s = &snaps[i];
+        if (!s->img) continue;
+        int c = overlap(s, set, n);
+        if (c * 2 >= n && c * 2 >= s->n && c > best_common) { best = s; best_common = c; }
+    }
+    return best ? best->img : NULL;
 }
 
 /* ---- the wallpaper (the background, as on macOS) ------------------------------------------ */
@@ -495,10 +555,11 @@ static void draw_desk(cairo_t *cr, int d, double at_x) {
     cairo_save(cr);
     rounded(cr, k->x, k->y, k->w, k->h, 6);
     cairo_clip(cr);
-    if (snap[d]) {                                       /* its picture */
+    cairo_surface_t *pic = find_snapshot(d);
+    if (pic) {                                           /* its picture */
         cairo_translate(cr, k->x, k->y);
         cairo_scale(cr, k->w / TW, k->h / THUMB_H);
-        cairo_set_source_surface(cr, snap[d], 0, 0);
+        cairo_set_source_surface(cr, pic, 0, 0);
         cairo_paint(cr);
     } else {                                             /* no picture yet: the wallpaper, with the
                                                             desktop's windows as outlines and icons */
@@ -697,7 +758,7 @@ static void open_mc(void) {
     bg = NULL;
     cairo_surface_t *img = load_wallpaper(cur);
     if (img) { bg = wallpaper_on_server(img); cairo_surface_destroy(img); }
-    take_snapshot(cur);                                  /* the current desktop, as it is now */
+    take_snapshot();                                     /* the current desktop, as it is now */
     XCompositeRedirectSubwindows(dpy, root, CompositeRedirectAutomatic);   /* window images, even
                                                         with no compositor or one that steps aside */
     read_windows();
@@ -786,7 +847,6 @@ static void remove_desktop(int d) {
     XSync(dpy, False);
     set_desktops(n - 1);
     adjust_base(-1);
-    drop_snapshots();
     XSync(dpy, False);
     usleep(50000);
     refresh();
@@ -808,9 +868,6 @@ static void reorder_desktops(int from, int to) {
         if (o >= 0 && o < n && newpos[o] != o)
             XChangeProperty(dpy, wins[i].w, A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&newpos[o], 1);
     }
-    cairo_surface_t *old[MAX_DESK];                      /* the pictures move too */
-    for (int d = 0; d < n; d++) old[d] = snap[d];
-    for (int d = 0; d < n; d++) snap[newpos[d]] = old[d];
     if (newpos[cur] != cur) { cur = newpos[cur]; switch_desktop(cur); }
     XSync(dpy, False);
     usleep(50000);
@@ -834,7 +891,6 @@ static void on_release(int x, int y) {
         dragging = 0; press_item = -1;
         if (hover_desk >= 0 && hover_desk != cur) {
             move_to_desktop(w, hover_desk);
-            if (hover_desk < MAX_DESK && snap[hover_desk]) { cairo_surface_destroy(snap[hover_desk]); snap[hover_desk] = NULL; }
             XSync(dpy, False); usleep(30000); refresh();
         } else if (hover_plus) {
             add_desktop(w);
@@ -861,12 +917,15 @@ static void handle(XEvent *e) {
         return;
     }
     if (e->type == PropertyNotify && e->xproperty.window == root) {
-        if (e->xproperty.atom == A_CURDESK) {            /* hook: arrived on a desktop */
-            snap_desk = get_card(root, A_CURDESK, 0);
-            snap_due = now_ms() + SNAP_DELAY_MS;
-        } else if (e->xproperty.atom == A_NDESK && !is_open) {
-            drop_snapshots();
-        }
+        if (e->xproperty.atom == A_CURDESK) snap_due = now_ms() + SNAP_DELAY_MS;   /* hook: arrived */
+        return;
+    }
+    /* hook: a window opened, closed, moved or resized (menus and pop-ups don't count) */
+    if ((e->type == MapNotify && !e->xmap.override_redirect && e->xmap.event == root) ||
+        (e->type == UnmapNotify && e->xunmap.event == root) ||
+        (e->type == ConfigureNotify && !e->xconfigure.override_redirect && e->xconfigure.event == root)) {
+        Window w = e->type == MapNotify ? e->xmap.window : e->type == UnmapNotify ? e->xunmap.window : e->xconfigure.window;
+        if (!is_open && w != ov && w != ctl) snap_due = now_ms() + SNAP_DELAY_MS;
         return;
     }
     if (!is_open) return;
@@ -949,7 +1008,7 @@ int main(int argc, char **argv) {
     }
     ctl = XCreateSimpleWindow(dpy, root, -1, -1, 1, 1, 0, 0, 0);
     XSetSelectionOwner(dpy, A_SEL, ctl, CurrentTime);
-    XSelectInput(dpy, root, PropertyChangeMask);
+    XSelectInput(dpy, root, PropertyChangeMask | SubstructureNotifyMask);
     if (what == 3) return 0;
     if (!daemon) open_mc();                              /* no copy running: open once */
 
@@ -959,7 +1018,7 @@ int main(int argc, char **argv) {
             long left = snap_due - now_ms();
             if (left <= 0) {
                 snap_due = -1;
-                if (!is_open && get_card(root, A_CURDESK, 0) == snap_desk) take_snapshot(snap_desk);
+                if (!is_open) take_snapshot();
             } else timeout = (int)left;
         }
         if (!daemon && !is_open) return 0;

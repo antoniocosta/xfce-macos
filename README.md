@@ -258,10 +258,12 @@ their icons (and the title of the one under the pointer).
 - Drag a desktop along the Spaces bar to reorder the desktops; their windows go with them.
 
 How it stays light: one small C program that sleeps in the background (about 2 MB of its own).
-X keeps no picture of hidden desktops, so when you arrive on a desktop (an event from the window
-manager, no timer) it waits for the slide to finish and takes one small snapshot: that's the
-desktop's picture in the Spaces bar. A desktop without one yet shows its windows' outlines and
-icons. While open, the windows are drawn from their own composited images, so they're live, over
+X keeps no picture of hidden desktops, so when the window manager reports a change on the current
+desktop (you arrived there, or a window opened, closed, moved or resized; no timer) it waits a
+second for things to settle and takes one small snapshot: that's the desktop's picture in the
+Spaces bar. A picture belongs to the windows it shows, not to a desktop number, so it survives
+desktops being added, removed or reordered. Empty desktops show the wallpaper; a desktop you
+haven't visited since login shows its windows' outlines and icons. While open, the windows are drawn from their own composited images, so they're live, over
 the desktop's wallpaper (decoded at screen size when it opens, freed when it closes).
 
 ```
