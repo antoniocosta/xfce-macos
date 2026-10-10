@@ -281,7 +281,7 @@ mission-control --open       open (3-finger swipe up)   --close: close (swipe do
 
 ## settings
 
-Where a Mac user looks for things, with the same names, in Xfce's **Settings Manager**. Our entries have a blue icon, so they are easy to tell from Xfce's own (which has a Keyboard and a Display of its own); the setup window has its own entry, **Make Xfce feel like macOS**. Changes apply
+Where a Mac user looks for things, with the same names, in Xfce's **Settings Manager**. Ours are in a section of their own, **xfce-macos**, at the top (apart from Personal, Hardware, System and Other), with a blue icon, so they are never confused with Xfce's own; the setup window has its entry there too, **Make Xfce feel like macOS**. Changes apply
 as you make them. A page is just a window: nothing runs after you close it.
 
 | Page | What's there |
@@ -292,7 +292,7 @@ as you make them. A page is just a window: nothing runs after you close it.
 | **Displays** | **Automatically adjust brightness**, only on computers with an ambient light sensor |
 | **Keyboard Brightness** | **Adjust keyboard brightness in low light**, only with a keyboard backlight |
 
-Pages whose hardware isn't there are not added. Dock settings are Plank's own (dconf), tap and
+Pages whose hardware isn't there are not added. The section comes from a copy of Settings Manager's menu file in `~/.config/menus` (made from your system's own at install time, so it can't go stale). Dock settings are Plank's own (dconf), tap and
 natural scrolling go through Xfce's pointer settings (so Xfce's own Mouse and Touchpad window stays
 in step), and the rest are small files under `~/.config`.
 

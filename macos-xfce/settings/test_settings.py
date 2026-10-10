@@ -129,5 +129,41 @@ class Brightness(unittest.TestCase):
             self.assertEqual(core.load_brightness(p), {"screen": False, "keyboard": False})
 
 
+class SettingsMenu(unittest.TestCase):
+    SYSTEM = open("/etc/xdg/menus/xfce-settings-manager.menu").read() if os.path.exists(
+        "/etc/xdg/menus/xfce-settings-manager.menu") else None
+
+    def load(self):
+        import importlib.machinery
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings-menu.py")
+        spec = importlib.util.spec_from_loader("settings_menu", importlib.machinery.SourceFileLoader("settings_menu", path))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    SAMPLE = """<Menu><Name>Settings</Name><Layout><Menuname>Personal</Menuname><Merge type="all"/></Layout>
+      <Include><And><Category>Settings</Category><Not><Or><Category>X-XFCE-PersonalSettings</Category></Or></Not></And></Include>
+      <Menu><Name>Personal</Name><Directory>p.directory</Directory></Menu>
+      <Menu><Name>Other</Name><Include><And><Not><Or><Category>X-XFCE-PersonalSettings</Category></Or></Not></And></Include></Menu></Menu>"""
+
+    def test_a_section_of_our_own_comes_first_and_stays_out_of_the_others(self):
+        import xml.etree.ElementTree as ET
+        text = self.load().build(self.SAMPLE)
+        root = ET.fromstring(text.split("\n", 2)[2])
+        self.assertEqual([m.text for m in root.find("Layout")][:2], ["xfce-macos", "Personal"])
+        self.assertEqual(root.findall("Menu")[0].findtext("Name"), "xfce-macos")
+        self.assertIn("X-XFCE-MacOSSettings", [c.text for c in root.find("Include").iter("Category")])
+        other = [m for m in root.findall("Menu") if m.findtext("Name") == "Other"][0]
+        self.assertIn("X-XFCE-MacOSSettings", [c.text for c in other.iter("Category")])
+
+    @unittest.skipUnless(SYSTEM, "no Settings Manager menu on this system")
+    def test_works_on_the_real_system_menu(self):
+        import xml.etree.ElementTree as ET
+        text = self.load().build(self.SYSTEM)
+        ET.fromstring(text.split("\n", 2)[2])        # well-formed
+        self.assertEqual(text.count("<Name>xfce-macos</Name>"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
