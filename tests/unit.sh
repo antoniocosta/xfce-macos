@@ -36,4 +36,7 @@ t_begin "autostart_entry"
 autostart_entry "Hot Corners" "/x/hot-corners"
 check "file named after the entry" grep -q '^Exec=/x/hot-corners$' "$HOME/.config/autostart/hot-corners.desktop"
 
+t_begin "vpntray: parsers and the provider adapter (against a fake CLI)"
+check "unit tests pass" python3 "$ROOT/extras/vpntray/test_vpntray.py"
+
 t_summary
