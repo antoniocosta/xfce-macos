@@ -200,13 +200,22 @@ restart_bg() {  # restart_bg PROCESS-NAME COMMAND...  (by exact process name, ne
     (setsid "$@" >/dev/null 2>&1 &)
 }
 
-build_c() {  # build_c FILE.c NAME [LIB...]: compile to ~/.local/bin/NAME when the source changed
+build_c() {  # build_c FILE.c NAME [LIB...]: compile to ~/.local/bin/NAME when the source (or a shared header) changed
     local src="$1" name="$2"; shift 2
+    local common stale=0 h
+    common="$(dirname "$src")/../common"
     mkd "$SRC" "$BIN"; rec_once file "$SRC/$name" created; mkdir -p "$SRC/$name"
-    if ! cmp -s "$src" "$SRC/$name/$name.c" || [[ ! -x "$BIN/$name" ]]; then
+    cmp -s "$src" "$SRC/$name/$name.c" || stale=1
+    [[ -x "$BIN/$name" ]] || stale=1
+    if [[ -d "$common" ]]; then          # headers shared between programs: kept next to the sources, where "../common/x.h" finds them
+        rec_once file "$SRC/common" created; mkdir -p "$SRC/common"
+        for h in "$common"/*.h; do cmp -s "$h" "$SRC/common/$(basename "$h")" || stale=1; done
+    fi
+    if (( stale )); then
         need gcc gcc
         track_file "$BIN/$name"
         cp "$src" "$SRC/$name/$name.c"
+        [[ -d "$common" ]] && cp "$common"/*.h "$SRC/common/"
         gcc -O2 -Wall -o "$BIN/$name" "$SRC/$name/$name.c" -lX11 "$@" || die "Build of $name failed (missing -dev packages?)"
         ok "Built $name"
     fi

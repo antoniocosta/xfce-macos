@@ -6,11 +6,20 @@ case "${1:-status}" in
   on)  xfconf-query -c xfwm4 -p /general/use_compositing -s false; sleep 0.5
        pkill -u "$USER" -x picom; sleep 0.3
        (setsid "$HOME/.local/bin/picom" --config "$HOME/.config/picom/picom.conf" >/dev/null 2>&1 &)
+       sleep 1.5
+       if ! pgrep -u "$USER" -x picom >/dev/null; then       # picom did not stay up: never leave the screen with no compositor
+           xfconf-query -c xfwm4 -p /general/use_compositing -s true
+           rm -f "$AUTO"
+           echo "desktop slide could not start picom: Xfce's own compositor is back on" >&2
+           exit 1
+       fi
        printf '[Desktop Entry]\nType=Application\nName=Desktop Slide (picom)\nExec=%s/.local/bin/picom --config %s/.config/picom/picom.conf\nX-GNOME-Autostart-enabled=true\n' "$HOME" "$HOME" > "$AUTO"
        echo "desktop slide on" ;;
   off) rm -f "$AUTO"; pkill -u "$USER" -x picom; sleep 0.3
        xfconf-query -c xfwm4 -p /general/use_compositing -s true
        echo "desktop slide off (Xfce's own compositor)" ;;
-  status) pgrep -u "$USER" -x picom >/dev/null && echo on || echo off ;;
+  status) if pgrep -u "$USER" -x picom >/dev/null; then echo on
+          elif [ "$(xfconf-query -c xfwm4 -p /general/use_compositing 2>/dev/null)" = true ]; then echo off
+          else echo "off (and no compositor running)"; fi ;;
   *) echo "usage: desktop-slide on|off|status" >&2; exit 2 ;;
 esac

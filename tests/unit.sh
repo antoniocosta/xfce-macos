@@ -44,7 +44,7 @@ mkdir -p "$HOME/.local/bin" "$HOME/.config/xfce-macos"
 printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/args"\n' "$tmp" > "$HOME/.local/bin/hotcorner"; chmod +x "$HOME/.local/bin/hotcorner"
 run_hc() { rm -f "$tmp/args"; (cd "$tmp" && HOT_CORNERS_TEST=1 timeout 1 bash "$ROOT/macos-xfce/hotcorner/hot-corners" >/dev/null 2>&1); tr '\n' ' ' < "$tmp/args" 2>/dev/null; }
 rm -f "$HOME/.config/xfce-macos/hot-corners.conf"
-eq "no settings saved: top right shows the desktop, bottom right Mission Control" "$(run_hc)" "-d 100 tr $HOME/.local/bin/show-desktop br $HOME/.local/bin/mission-control "
+eq "no settings saved: top right shows the desktop, bottom right Mission Control" "$(run_hc)" "-d 100 tr $HOME/.local/bin/show-desktop br $HOME/.local/bin/mission-control --open "
 printf 'tl = launchpad\ntr = none\nbl = lock-screen\nbr = display-sleep\n' > "$HOME/.config/xfce-macos/hot-corners.conf"
 got="$(run_hc)"
 check "top left is Launchpad"      bash -c "[[ '$got' == *'tl rofi -show drun'* ]]"

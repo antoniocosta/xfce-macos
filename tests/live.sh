@@ -27,7 +27,8 @@ gcc -O2 -o "$BIN/fullscreen"      "$ROOT/macos-xfce/fullscreen/fullscreen.c" -lX
 gcc -O2 -o "$BIN/mission-control" "$ROOT/macos-xfce/mission-control/mission-control.c" -lX11 -lXcomposite -lcairo -ljpeg -lm || exit 1
 gcc -O2 -o "$BIN/idle-watch"      "$ROOT/macos-xfce/auto-brightness/idle-watch.c" -lX11 -lXext || exit 1
 gcc -O2 -o "$BIN/hotcorner"       "$ROOT/macos-xfce/hotcorner/hotcorner.c" -lX11 || exit 1
-install -m 755 "$ROOT/macos-xfce/hotcorner/show-desktop" "$ROOT/macos-xfce/desktop-slide/desktop-switch" "$BIN/"
+gcc -O2 -o "$BIN/show-desktop"    "$ROOT/macos-xfce/hotcorner/show-desktop.c" -lX11 || exit 1
+gcc -O2 -o "$BIN/desktop-switch"  "$ROOT/macos-xfce/desktop-slide/desktop-switch.c" -lX11 || exit 1
 
 # ---- the invisible display and its window manager ----
 for n in $(seq 90 120); do [[ -e /tmp/.X11-unix/X$n ]] || { DNUM=$n; break; }; done

@@ -77,7 +77,8 @@ say "building"
 gcc -O2 -o "$HOME/.local/bin/fullscreen" "$ROOT/macos-xfce/fullscreen/fullscreen.c" -lX11 -lXi -lcairo -lm || die "build"
 gcc -O2 -o "$HOME/.local/bin/mission-control" "$ROOT/macos-xfce/mission-control/mission-control.c" \
     -lX11 -lXcomposite -lcairo -ljpeg -lm || die "build"
-install -m 755 "$ROOT/macos-xfce/hotcorner/show-desktop" "$ROOT/macos-xfce/desktop-slide/desktop-switch" "$HOME/.local/bin/"
+gcc -O2 -o "$HOME/.local/bin/show-desktop"   "$ROOT/macos-xfce/hotcorner/show-desktop.c" -lX11 || die "build"
+gcc -O2 -o "$HOME/.local/bin/desktop-switch" "$ROOT/macos-xfce/desktop-slide/desktop-switch.c" -lX11 || die "build"
 
 # ---- the look: copied (read-only) from the installed one ------------------------------------------
 say "the look"

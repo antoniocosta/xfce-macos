@@ -15,6 +15,8 @@ fi
 
 t_begin "C programs build without warnings"
 tmp="$(mktemp -d)"
+check "show-desktop"    gcc -O2 -Wall -Wextra -Werror -o "$tmp/e" macos-xfce/hotcorner/show-desktop.c -lX11
+check "desktop-switch"  gcc -O2 -Wall -Wextra -Werror -o "$tmp/f" macos-xfce/desktop-slide/desktop-switch.c -lX11
 check "hotcorner"       gcc -O2 -Wall -Wextra -Werror -o "$tmp/a" macos-xfce/hotcorner/hotcorner.c -lX11
 check "idle-watch"       gcc -O2 -Wall -Wextra -Werror -o "$tmp/d" macos-xfce/auto-brightness/idle-watch.c -lX11 -lXext
 check "fullscreen"      gcc -O2 -Wall -Wextra -Werror -o "$tmp/b" macos-xfce/fullscreen/fullscreen.c -lX11 -lXi -lcairo -lm

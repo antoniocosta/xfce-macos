@@ -4,10 +4,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/../../lib/common.sh"
 require_xfce
 mapfile -t pkgs < <(packages_of "$HERE"); ensure_packages "${pkgs[@]}"
-# hotcorner: macOS hot corners. Top right: show desktop; bottom right: Mission Control (skippy-xd,
-# set up by macos-xfce/). Change the corners in ~/.local/bin/hot-corners.
+# hotcorner: macOS hot corners. Top right: show desktop; bottom right: Mission Control (set up by
+# mission-control/). Change the corners in Settings > Desktop & Dock > Hot Corners.
 build_c "$HERE/hotcorner.c" hotcorner
-install_bin "$HERE/hot-corners" "$HERE/show-desktop"
+build_c "$HERE/show-desktop.c" show-desktop
+install_bin "$HERE/hot-corners"
 autostart_entry "Hot Corners" "$BIN/hot-corners"
 track_proc hot-corners hotcorner
 (setsid "$BIN/hot-corners" >/dev/null 2>&1 &)   # replaces any running copy itself

@@ -370,13 +370,16 @@ setup_window_manager() {
     # One desktop to start with, like macOS: more come from Mission Control (+, or dragging a window
     # onto it) and stay until removed there. Only on the first run, and only while every window is
     # still on the first desktop (a fresh install); after that the number is yours.
-    local mark="$HOME/.config/xfce-macos/desktops-set"
+    local mark="$HOME/.config/xfce-macos/desktops-set" count wl
     if [[ ! -f "$mark" ]]; then
-        if ! wmctrl -l | awk '$2 > 0 {found=1} END {exit !found}'; then
+        count="$(xfconf-query -c xfwm4 -p /general/workspace_count 2>/dev/null || echo 4)"
+        # a fresh install: Mint's 4 desktops (so not a number you chose) and every window on the first one.
+        # If the windows can't be listed, the count stays as it is.
+        if [[ "$count" == 4 ]] && wl="$(wmctrl -l 2>/dev/null)" && ! awk '$2 > 0 {found=1} END {exit !found}' <<<"$wl"; then
             xfset xfwm4 /general/workspace_count int 1
             ok "One desktop, like macOS (add more in Mission Control)"
         fi
-        mkd "$(dirname "$mark")"; track_file "$mark"; touch "$mark"
+        mkd "$(dirname "$mark")"; touch "$mark"      # (not undone by --restore: a later install keeps your count too)
     fi
     xfset xfwm4 /general/tile_on_move     bool false   # no half-screen snapping at the edges
     xfset xfwm4 /general/cycle_workspaces bool true    # Cmd+Tab lists windows of every desktop
@@ -544,7 +547,16 @@ setup_dock() {
         sed "s|^dock-items=.*|dock-items=[$(IFS=,; echo "${items[*]}" | sed "s/,/, /g")]|" "$FILES/plank-dock1.dconf" \
             | dconf_load /net/launchpad/plank/docks/dock1/
     else
-        grep -v '^dock-items=' "$FILES/plank-dock1.dconf" | dconf_load /net/launchpad/plank/docks/dock1/
+        # re-run: keep what you changed in Desktop & Dock (size, zoom, position, hiding...); only settings
+        # that have no value yet get the default
+        local line key missing=""
+        while IFS= read -r line; do
+            [[ "$line" =~ ^([a-z0-9-]+)=.+$ ]] || continue
+            key="${BASH_REMATCH[1]}"
+            [[ "$key" == dock-items ]] && continue
+            [[ -z "$(dconf read "/net/launchpad/plank/docks/dock1/$key" 2>/dev/null)" ]] && missing+="$line"$'\n'
+        done < "$FILES/plank-dock1.dconf"
+        [[ -n "$missing" ]] && printf '[/]\n%s' "$missing" | dconf_load /net/launchpad/plank/docks/dock1/
     fi
     autostart_entry "Plank" "plank"
     pgrep -u "$USER" -x plank >/dev/null || { track_proc plank; (setsid plank >/dev/null 2>&1 &); }

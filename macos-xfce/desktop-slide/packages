@@ -1,4 +1,4 @@
-wmctrl x11-utils   # desktop-switch (wmctrl, xprop)
+gcc libx11-dev    # build desktop-switch
 git meson ninja-build gcc cmake pkg-config   # picom v13 build
 libdbus-1-dev libegl-dev libev-dev libgl-dev libepoxy-dev libpcre2-dev libpixman-1-dev
 libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-glx0-dev libxcb-image0-dev
