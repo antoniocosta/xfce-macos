@@ -194,7 +194,7 @@ The rules every part follows:
 | look | WhiteSur dark window theme, Inter font, macOS cursors, Mint's app icons with a horizontal macOS battery, dark mode for Firefox and GTK4 apps too | `setup_theme` |
 | window buttons | close / minimize / maximize on the left, centred title | Xfce window manager |
 | desktop | "Macintosh HD / 91 GB free", USB drives and servers in a column at the top right | xfdesktop + [disk-label](#disk-label) |
-| Firefox | trackpad scrolling slowed to macOS speed, leaner (4 content processes, tabs unloaded when memory runs low, no telemetry or sponsored content; site isolation kept), hardware video decoding where the GPU has it | Firefox `user.js` |
+| Firefox | trackpad scrolling slowed to macOS speed, smooth two-finger scrolling and pinch-to-zoom (Firefox needs `MOZ_USE_XINPUT2=1` on X11; it is set at login in `~/.xsessionrc`, so quit Firefox fully and log in again once), leaner (4 content processes, tabs unloaded when memory runs low, no telemetry or sponsored content; site isolation kept), hardware video decoding where the GPU has it | Firefox `user.js` |
 
 Also: notifications at the top right, without Wi-Fi "connected" pop-ups; menu bar status icons in
 a fixed order and one battery icon; window buttons on the left in apps that draw their own title
