@@ -103,7 +103,9 @@ Options, all off by default:
 
 One part on its own: its `install.sh`, for example `./macos-xfce/hotcorner/install.sh`.
 
-Everything is safe to re-run: each step checks before it changes anything. Programs go in
+Everything is safe to re-run: each step checks before it changes anything, and what you changed
+afterwards is kept: the Dock settings you set in Desktop & Dock, the desktop slide if you turned
+it off, the number of desktops, your Dock items. Programs go in
 `~/.local/bin`, settings in your Xfce settings and `~/.config`. Where a file is shared with other
 tools (`gtk.css`, `~/.xsessionrc`, Firefox's `user.js`, Toshy's config), the change sits in a
 block marked `xfce-macos` that a re-run replaces instead of duplicating.
@@ -255,8 +257,18 @@ All of it at once: `./macos-xfce/install.sh --restore` (see [Restore](#restore))
 
 Move the pointer into a corner and rest it there for a moment: top right shows the desktop (do
 it again to bring the windows back; nothing happens in a full-screen app, as on macOS), bottom
-right opens Mission Control. It doesn't fire while a
-mouse button is held, so dragging a window into a corner does nothing.
+right opens Mission Control. It doesn't fire while a mouse button is held, so dragging a window
+or a file into a corner does nothing (the wait starts when you let go). A corner fires once: it
+is armed again only after the pointer has gone 30 pixels away, so a finger resting on the
+trackpad can't set it off twice and undo what it just did. The corners follow a change of
+resolution.
+
+**Show desktop** is per desktop, as on macOS: it hides the windows of this desktop only, and
+the same again (or the pinch back in) brings back exactly those, the window you were using
+last and with the focus. It does nothing on an empty desktop or in a full-screen app. The
+windows it hid carry a mark on themselves, so full-screen Spaces or Mission Control renumbering
+the desktops can't lose them. `show-desktop --hide` and `--restore` are what the spread and the
+pinch run.
 
 `hotcorner.c` asks X where the pointer is 5 times a second, and 50 times a second only while the
 pointer is near a corner, so it reacts quickly and still uses almost nothing. Polling, rather
@@ -273,6 +285,10 @@ this builds picom v13 from source, which has animations. picom knows nothing abo
 directions, so `desktop-switch` marks the windows that leave and arrive with
 `_MAC_SLIDE = fwd/back` just before switching, and picom's rules (`picom.conf`) slide them by a
 screen width in 0.35 s. Switches from Cmd+Tab or Mission Control stay instant, as on macOS.
+`desktop-switch` is a small C program on one X connection (a few milliseconds, no process per
+window): quick repeats each count, the newest switch clears the marks, and it never wraps
+around. `desktop-slide on` checks that picom really started; if it didn't, Xfce's own compositor
+is switched back on, so the screen is never left without one.
 
 ```
 desktop-slide on | off | status    # off: back to Xfce's own compositor
@@ -327,9 +343,13 @@ windows of the desktop that app came from (and goes back to the app if you pick 
 - Click a window to go to it; click a desktop to switch to it; Esc, F3, Ctrl+↑, a 3-finger swipe
   down or a click on empty space closes it.
 - Drag a window onto a desktop to move it there, or onto **+** to give it a desktop of its own.
-- **+** adds a desktop; the **×** on a hovered desktop removes it (its windows move to the
-  neighbouring desktop; on a full-screen Space it leaves full screen).
-- Drag a desktop along the Spaces bar to reorder the desktops; their windows go with them.
+- **+** adds a desktop; the **×** on a hovered desktop removes it (its windows, minimized ones
+  too, move to the nearest ordinary desktop; on a full-screen Space it leaves full screen). A
+  desktop that full-screen apps came from has no ×: leave those apps first.
+- Drag a desktop along the Spaces bar to reorder the desktops; their windows go with them, and
+  its full-screen Spaces stay right after it. A Space itself can't be dragged, and a window can't
+  be dropped on one (a Space belongs to its app alone).
+- It follows changes while open: a window closing, a desktop added in Xfce's settings.
 - Up to 16 desktops, full-screen Spaces included, as on macOS (the **+** goes away at 16; an app
   going full screen then stays on its own desktop).
 
@@ -416,6 +436,17 @@ one (and back when it goes), but never while a mouse button is held: renumbering
 a window that's being dragged is what breaks things. Each window keeps its own desktop number
 on itself, so a restart of the program never strands it.
 
+**Keeping the desktops straight.** Spaces are desktops, and several things change desktops (this
+program, Mission Control, Xfce's own Workspace settings, the window manager). So:
+the window manager answers a request a moment after it is made, and each change waits until it
+has really happened before the next step reads the result; the list of empty Spaces waiting to be
+removed lives on the root window, so whoever renumbers desktops renumbers it too; and a repair
+pass runs after every change settles: a Space comes after the desktop it came from, nothing but
+its app (and the app's dialogs) is on it, and the count of ordinary desktops adds up even if you
+add or remove desktops yourself in Xfce's settings. Whatever it repairs it logs
+(`FULLSCREEN_LOG=file`). `fullscreen --dump` prints the desktops, Spaces and windows as they are
+now, which is what to look at if something looks wrong.
+
 Xfce keeps a focused full-screen window above the panel and the dock, so while the title bar or
 the dock shows, a small window of ours takes the focus (carrying the app's menu properties, so
 the global menu stays the app's) and gives it back when the pointer leaves; the app is alone on
@@ -486,7 +517,11 @@ the tests open windows, move the pointer and click: full-screen Spaces (created 
 desktop, removed when left or closed, new windows sent to the app's desktop, dialogs kept, the
 16-Space limit, surviving a restart), the green button, the top and bottom edges, show-desktop,
 Mission Control (opening, clicking, dragging windows onto desktops and onto +, the ×, reordering
-desktops, full-screen apps only in the bar, desktop pictures), hot corners and desktop switching.
+desktops, full-screen apps only in the bar, desktop pictures, a desktop's windows after removing
+the first one or with a minimized window, Spaces moving with their desktop, a damaged wallpaper,
+changes while it is open), the repair pass (rapid full-screen toggling, a window landing on a
+Space, desktops added by someone else), hot corners (resting, wobbling, dragging) and desktop
+switching (quick repeats, no marks left).
 Mission Control helps by writing where it drew everything when `MISSION_CONTROL_LAYOUT` is set.
 
 ## License
