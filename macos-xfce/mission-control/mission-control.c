@@ -801,6 +801,7 @@ static long origin_of_space(long d) {
     for (unsigned long i = 0; list && i < n; i++)
         if (get_card(list[i], A_DESK, -1) == d && has_atom(list[i], A_STATE, A_FULL)) {
             long w = get_card(list[i], A_ORIGIN, -1);
+            if (w >= d) w = d > 0 ? d - 1 : 0;           /* a Space comes after its origin: ignore bad data */
             if (w >= 0) { o = w; break; }
         }
     if (list) XFree(list);

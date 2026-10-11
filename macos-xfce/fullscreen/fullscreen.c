@@ -70,7 +70,7 @@ struct client {
 
 static Display *dpy;
 static Window root;
-static Atom A_CLIENTS, A_CLIENTS_PLAIN, A_ACTIVE, A_STATE, A_FULL, A_MAXV, A_MAXH, A_ABOVE, A_SKIP_TB, A_SKIP_PG,
+static Atom A_CLIENTS, A_CLIENTS_PLAIN, A_ACTIVE, A_STATE, A_FULL, A_HIDDEN, A_MAXV, A_MAXH, A_ABOVE, A_SKIP_TB, A_SKIP_PG,
     A_EXTENTS, A_CLOSE, A_NAME, A_UTF8, A_DESK, A_NDESK, A_CURDESK, A_TYPE, A_TYPE_DOCK, A_TYPE_NORMAL, A_SLIDE,
     A_MOTIF, A_ORIGIN;
 static const char *MENU_PROPS[] = {   /* what the global menu reads from the active window */
@@ -212,6 +212,16 @@ static void write_base(long b) {
 
 static long desk_of(Window w) { return get_card(w, A_DESK, -1); }
 
+/* The desktop a full-screen window's Space came from. A Space always comes right after it, so an origin
+ * that is not before the Space (it once ended up as the Space's own number) is bad bookkeeping: trusting
+ * it would send new windows onto the full-screen app itself, hidden behind it. Use the desktop before the
+ * Space instead. */
+static long sane_origin(const struct client *c) {
+    long space = c->space >= 0 ? c->space : desk_of(c->w);
+    if (c->origin >= 0 && c->origin < space) return c->origin;
+    return space > 0 ? space - 1 : 0;
+}
+
 static int desktop_empty(long d) {
     for (int i = 0; i < ncl; i++) if (desk_of(cl[i].w) == d) return 0;
     return 1;
@@ -308,7 +318,7 @@ static void enter_space(struct client *c, int quiet) {   /* quiet: adopt a windo
 
 /* leaving full screen (or closed): back to its own desktop; the Space goes once it is empty */
 static void leave_space(struct client *c, int gone) {
-    long origin = c->origin, s = c->space, cur = get_card(root, A_CURDESK, 0);
+    long origin = sane_origin(c), s = c->space, cur = get_card(root, A_CURDESK, 0);
     LOG("leave space 0x%lx (gone %d) back to %ld from space %ld", c->w, gone, origin, s);
     if (gone) c->origin = -1; else set_origin(c, -1);
     c->space = -1;
@@ -340,7 +350,8 @@ static void keep_space_to_its_app(Window w) {
     if (t) XFree(t);
     Window for_w;
     if (!normal || XGetTransientForHint(dpy, w, &for_w)) { LOG("new window 0x%lx: a dialog, stays", w); return; }
-    long origin = owner->origin;
+    long origin = sane_origin(owner);
+    if (origin != owner->origin) set_origin(owner, origin);        /* and put it right */
     LOG("new window 0x%lx on 0x%lx's Space: to desktop %ld", w, owner->w, origin);
     move_to_desktop(w, origin);
     XSync(dpy, False);
@@ -401,7 +412,11 @@ static void on_press(void) {
     Window r, c; int px, py, wx, wy; unsigned int mask;
     if (!XQueryPointer(dpy, root, &r, &c, &px, &py, &wx, &wy, &mask)) return;
     Window hit = None;
+    long here = get_card(root, A_CURDESK, 0);
     for (int i = ncl - 1; i >= 0; i--) {                         /* stacking order: top-most last */
+        long d = desk_of(cl[i].w);                               /* only what is on this desktop can be clicked: */
+        if (d >= 0 && d != here) continue;                       /* a full-screen app on another one must not take the click */
+        if (has_state(cl[i].w, A_HIDDEN)) continue;
         int x = cl[i].geo[0], y = cl[i].geo[1], w = cl[i].geo[2], h = cl[i].geo[3], top = cl[i].geo[4];
         if (px < x || px >= x + w || py < y || py >= y + h) continue;
         int zone_h = top > 0 ? top : CSD_TITLE_H;
@@ -623,6 +638,7 @@ int main(int argc, char **argv) {
     A_ACTIVE = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
     A_STATE = XInternAtom(dpy, "_NET_WM_STATE", False);
     A_FULL = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
+    A_HIDDEN = XInternAtom(dpy, "_NET_WM_STATE_HIDDEN", False);
     A_MAXV = XInternAtom(dpy, "_NET_WM_STATE_MAXIMIZED_VERT", False);
     A_MAXH = XInternAtom(dpy, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
     A_ABOVE = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);

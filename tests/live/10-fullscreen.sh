@@ -41,6 +41,19 @@ eq "the new window went to desktop 2"     "$(desk_of "$C")" 2
 eq "and we slid there"                    "$(curdesk)" 2
 eq "the full-screen app stays on its Space" "$(desk_of "$A")" 3
 
+t_begin "fullscreen: bad bookkeeping never puts a window on top of the full-screen app"
+reset_desktops; start_fullscreen
+A=$(open_win fs-a); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2
+wmctrl -i -r "$A" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 2 ]"
+# corrupt it: the Space's origin is the Space itself (this happened once, and the next window opened hidden behind the app)
+xprop -id "$A" -f _MACOS_FULLSCREEN_ORIGIN 32c -set _MACOS_FULLSCREEN_ORIGIN 2; sleep 0.6
+C=$(open_win fs-new)
+wait_until 3 bash -c "[ \$(desk_of $C) != 2 ]"
+check "the new window is not on the full-screen app's desktop" bash -c "[ \$(desk_of $C) != 2 ]"
+eq "it went to the desktop before the Space"  "$(desk_of "$C")" 1
+eq "and the origin was put right"             "$(origin_of "$A")" 1
+
 t_begin "fullscreen: the app's own dialog stays on top of it"
 reset_desktops; start_fullscreen
 A=$(open_win fs-app --child fs-dialog 4); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2
@@ -106,6 +119,19 @@ wait_until 3 is_full "$A"
 check "full screen instead of maximized"  is_full "$A"
 check "not left maximized" bash -c "! xprop -id $A _NET_WM_STATE | grep -q MAXIMIZED"
 eq "on its own Space"                     "$(desk_of "$A")" 1
+
+t_begin "fullscreen: the green button works with a full-screen app on another desktop"
+reset_desktops; start_fullscreen
+F=$(open_win fs-other); wmctrl -i -r "$F" -t 1; go 1; wmctrl -i -a "$F"; sleep 0.2
+wmctrl -i -r "$F" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 2 ]"
+G=$(open_win fs-g); wmctrl -i -r "$G" -t 0; go 0; wmctrl -i -a "$G"; sleep 0.5
+eval "$(xwininfo -id "$G" | awk '/Absolute upper-left X/{print "X=" $4} /Absolute upper-left Y/{print "Y=" $4}')"
+top=$(xprop -id "$G" _NET_FRAME_EXTENTS | awk -F', ' '{print $3}')
+xdotool mousemove $((X + 100)) $((Y - top / 2)) click 1       # the other desktop's full-screen app is "under" this spot
+wmctrl -i -r "$G" -b add,maximized_vert,maximized_horz
+wait_until 3 is_full "$G"
+check "full screen instead of maximized"  is_full "$G"
 
 t_begin "fullscreen: maximizing without that click stays a plain maximize"
 B=$(open_win fs-b); wmctrl -i -r "$B" -t 0; go 0; wmctrl -i -a "$B"; sleep 1.2

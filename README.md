@@ -493,3 +493,7 @@ Mission Control helps by writing where it drew everything when `MISSION_CONTROL_
 
 MIT, see [LICENSE](LICENSE). The projects the installers download keep their own licences:
 see [THIRD_PARTY.md](THIRD_PARTY.md).
+
+## Legal Disclaimer
+
+macOS, Mission Control, Spotlight, Launchpad, MacBook, and Macintosh are trademarks of Apple Inc., registered in the U.S. and other countries. This project is an independent, open-source community effort to configure the Xfce desktop environment and is not affiliated with, sponsored by, or endorsed by Apple Inc.

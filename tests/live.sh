@@ -46,10 +46,14 @@ WM=$!
 wait_until 10 bash -c 'xprop -root _NET_SUPPORTING_WM_CHECK | grep -q "window id"' || { echo "xfwm4 did not start"; exit 1; }
 wait_until 10 bash -c 'xprop -root _NET_NUMBER_OF_DESKTOPS | grep -q "= 4"'
 cleanup() {   # everything this run started: its own children only (by PID), then the display
-    local p; for p in $(jobs -p); do kill "$p" 2>/dev/null; done
-    kill "$WM" "$XVFB" 2>/dev/null; wait 2>/dev/null
+    local p; for p in $(jobs -p) "$WM" "$XVFB"; do kill "$p" 2>/dev/null; done
+    sleep 0.3
+    for p in $(jobs -p) "$WM" "$XVFB"; do kill -9 "$p" 2>/dev/null; done   # a stuck one must not outlive the run
+    wait 2>/dev/null
+    rm -rf "$LIVE_TMP"
 }
 trap cleanup EXIT
+trap 'exit 130' INT TERM HUP        # a timeout or Ctrl+C still runs cleanup
 
 # ---- helpers for the tests ----
 win_id() { xdotool search --name "^$1\$" 2>/dev/null | head -1; }
