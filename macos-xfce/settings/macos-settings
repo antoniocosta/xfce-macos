@@ -268,7 +268,8 @@ def pane_keyboard():
     ok = core.has_keyboard_backlight() and core.has_light_sensor()
     row(Gtk, grid, 0, "Adjust keyboard brightness in low light:", switch(
         Gtk, st["keyboard"], lambda on: core.save_brightness(core.load_brightness()["screen"], on), ok),
-        note=("The keyboard light comes on in the dark and off in bright light." if ok else
+        note=("The keyboard light comes on in the dark and off in bright light. It also goes off when the "
+              "screen goes to sleep (Power Manager's display setting) and comes back at the first key." if ok else
               "This computer has no keyboard backlight or no ambient light sensor."))
     return win
 

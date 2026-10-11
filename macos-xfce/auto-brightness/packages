@@ -1,1 +1,2 @@
 zenity   # settings dialog
+gcc libx11-dev libxext-dev   # build idle-watch

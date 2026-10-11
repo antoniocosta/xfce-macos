@@ -16,6 +16,7 @@ fi
 t_begin "C programs build without warnings"
 tmp="$(mktemp -d)"
 check "hotcorner"       gcc -O2 -Wall -Wextra -Werror -o "$tmp/a" macos-xfce/hotcorner/hotcorner.c -lX11
+check "idle-watch"       gcc -O2 -Wall -Wextra -Werror -o "$tmp/d" macos-xfce/auto-brightness/idle-watch.c -lX11 -lXext
 check "fullscreen"      gcc -O2 -Wall -Wextra -Werror -o "$tmp/b" macos-xfce/fullscreen/fullscreen.c -lX11 -lXi -lcairo -lm
 check "mission-control" gcc -O2 -Wall -Wextra -Werror -o "$tmp/c" macos-xfce/mission-control/mission-control.c \
                         -lX11 -lXcomposite -lcairo -ljpeg -lm

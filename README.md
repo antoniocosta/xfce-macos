@@ -306,6 +306,12 @@ keyboard backlight fades on in the dark and off in bright light. When you change
 yourself, it keeps that offset, like macOS. Brightness is set through logind, so no root is
 needed. Turn screen or keyboard on and off in Settings Manager → **Auto Brightness**.
 
+The keyboard light also goes off when the screen goes to sleep for lack of activity, and comes
+back at the first key press or touch. It follows the screen's own power-save time (the one Xfce's Power
+Manager sets from its Display settings, swapped when you plug or unplug the charger), so there is
+one setting for both and nothing new to configure. `idle-watch`, a small C program, asks the X
+server to tell it when that time has passed and when you are back, so it sleeps in between.
+
 Installs only where there is a light sensor.
 
 ---
@@ -354,7 +360,7 @@ as you make them. A page is just a window: nothing runs after you close it.
 | **Hot Corners** (on the Desktop & Dock page) | A choice per screen corner, applied as you change it: Mission Control, Desktop, Launchpad, Lock Screen, Put Display to Sleep, or nothing. Saved in `~/.config/xfce-macos/hot-corners.conf`; the corners restart a moment after you change one |
 | **Trackpad** | **Tap to click**, **Natural scrolling** (as on a Mac), **Tracking speed**, **Scrolling speed** (how far your fingers travel per scroll step; Xfce has no window for it, so it is saved and re-applied at every login) |
 | **Displays** | **Automatically adjust brightness**, only on computers with an ambient light sensor |
-| **Keyboard Brightness** | **Adjust keyboard brightness in low light**, only with a keyboard backlight |
+| **Keyboard Brightness** | **Adjust keyboard brightness in low light**, only with a keyboard backlight. The light also goes off when the screen sleeps, on the screen's own setting |
 
 Pages whose hardware isn't there are not added. The section comes from a copy of Settings Manager's menu file in `~/.config/menus` (made from your system's own at install time, so it can't go stale). Dock settings are Plank's own (dconf), tap and
 natural scrolling go through Xfce's pointer settings (so Xfce's own Mouse and Touchpad window stays

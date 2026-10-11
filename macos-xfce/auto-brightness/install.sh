@@ -10,6 +10,7 @@ if ! ls /sys/bus/iio/devices/iio:device*/in_illuminance_* >/dev/null 2>&1; then
     info "No ambient light sensor here; auto-brightness skipped"; exit 0
 fi
 install_bin "$HERE/auto-brightness"
+build_c "$HERE/idle-watch.c" idle-watch -lXext      # tells it when the screen sleeps for lack of activity
 autostart_entry "Auto Brightness" "$BIN/auto-brightness"
 [[ -f "$HOME/.config/auto-brightness.conf" ]] || { track_file "$HOME/.config/auto-brightness.conf"; printf '[auto-brightness]\nscreen = true\nkeyboard = true\n' > "$HOME/.config/auto-brightness.conf"; }
 # its settings are on the Displays and Keyboard pages (macos-xfce/settings)

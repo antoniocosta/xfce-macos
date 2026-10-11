@@ -5,7 +5,9 @@ Reads the MacBook's light sensor (IIO `acpi-als`, in lux) every 2 s, smooths it,
 the screen backlight along a logarithmic curve, one step at a time. The keyboard backlight
 fades on in the dark and off in bright light. Manual changes win: if you change the
 brightness yourself, that offset from the curve is remembered (like macOS), and the
-keyboard keeps the level you last chose.
+keyboard keeps the level you last chose. The keyboard light also goes off when the screen goes to
+sleep for lack of activity (the screen's own power-save time, set in Power Manager, so there is one
+setting for both) and comes back at the first key press or touch (idle-watch tells it, no polling).
 
 Brightness is set through logind (org.freedesktop.login1.Session.SetBrightness), so no root
 is needed. Settings: `auto-brightness --settings` (also in Xfce's Settings Manager) writes
@@ -16,6 +18,7 @@ import glob
 import json
 import math
 import os
+import select
 import subprocess
 import sys
 import time
@@ -107,6 +110,35 @@ def save_state(state):
         json.dump(state, f)
 
 
+def start_idle_watch():
+    """idle-watch (next to this program) says "idle" when the screen's power-save time has passed and
+    "active" at the next key or movement. The keyboard light goes off and comes back with the screen,
+    on the same setting (Power Manager's Display blanking), with nothing new to configure."""
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "idle-watch")
+    if not os.path.exists(path):
+        return None
+    try:
+        return subprocess.Popen([path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+    except OSError:
+        return None
+
+
+def wait_for_idle_event(proc, seconds, idle):
+    """Sleep up to `seconds`, but wake at once when idle-watch speaks. Returns (idle, changed, proc)."""
+    if proc is None:
+        time.sleep(seconds)
+        return idle, False, None
+    ready, _, _ = select.select([proc.stdout], [], [], seconds)
+    if not ready:
+        return idle, False, proc
+    data = os.read(proc.stdout.fileno(), 4096)
+    if not data:                                  # it ended: carry on without it, the light stays as it is
+        return False, idle, None
+    words = data.decode("utf-8", "replace").split()
+    new = (words[-1] == "idle") if words and words[-1] in ("idle", "active") else idle
+    return new, new != idle, proc
+
+
 def curve(lux, max_level):
     """lux -> screen level: 0 lux ~ 27%, 10 ~ 47%, 100 ~ 67%, 1000 ~ 87%, 4000+ = 100%."""
     frac = 0.27 + 0.20 * math.log10(max(lux, 0) + 1)
@@ -131,6 +163,9 @@ def main():
     last_kbd = read_int(f"{kbd}/brightness") if kbd else None
     kbd_on = None
     kbd_user_off = False      # you switched the keyboard light off: leave it until the room gets bright
+    idle_proc = start_idle_watch()
+    idle = False              # the screen's power-save time has passed: keyboard light off until you are back
+    idle_changed = False
 
     while True:
         auto_screen, auto_kbd = load_conf()
@@ -178,9 +213,9 @@ def main():
                 kbd_on = False
             elif not kbd_on and lux_s < KBD_ON_LUX:
                 kbd_on = True
-            target = kbd_level if kbd_on and not kbd_user_off else 0
+            target = kbd_level if kbd_on and not kbd_user_off and not idle else 0
             if target != cur:
-                n = 12                                 # fade over ~0.6 s
+                n = 3 if idle_changed else 12          # fade over ~0.6 s; at once when the screen sleeps or you are back
                 for i in range(1, n + 1):
                     set_brightness(session, "leds", os.path.basename(kbd), cur + (target - cur) * i / n)
                     time.sleep(0.05)
@@ -189,7 +224,7 @@ def main():
         elif kbd:
             last_kbd = read_int(f"{kbd}/brightness")
 
-        time.sleep(SAMPLE_S)
+        idle, idle_changed, idle_proc = wait_for_idle_event(idle_proc, SAMPLE_S, idle)
 
 
 if __name__ == "__main__":

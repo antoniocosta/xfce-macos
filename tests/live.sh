@@ -25,6 +25,7 @@ BIN=$T/bin
 # ---- build the programs from this checkout ----
 gcc -O2 -o "$BIN/fullscreen"      "$ROOT/macos-xfce/fullscreen/fullscreen.c" -lX11 -lXi -lcairo -lm || exit 1
 gcc -O2 -o "$BIN/mission-control" "$ROOT/macos-xfce/mission-control/mission-control.c" -lX11 -lXcomposite -lcairo -ljpeg -lm || exit 1
+gcc -O2 -o "$BIN/idle-watch"      "$ROOT/macos-xfce/auto-brightness/idle-watch.c" -lX11 -lXext || exit 1
 gcc -O2 -o "$BIN/hotcorner"       "$ROOT/macos-xfce/hotcorner/hotcorner.c" -lX11 || exit 1
 install -m 755 "$ROOT/macos-xfce/hotcorner/show-desktop" "$ROOT/macos-xfce/desktop-slide/desktop-switch" "$BIN/"
 
