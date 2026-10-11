@@ -18,7 +18,7 @@ CONF="${XDG_CONFIG_HOME:-$HOME/.config}/xfce-macos/hot-corners.conf"
 # what a corner does (the actions of the settings page)
 command_for() {
     case "$1" in
-        mission-control) printf '%q --open' "$BIN/mission-control" ;;
+        mission-control) printf '%q' "$BIN/mission-control" ;;   # toggles: the corner again closes it
         desktop)         printf '%q' "$BIN/show-desktop" ;;
         launchpad)       printf 'rofi -show drun -theme %q' "$HOME/.config/rofi/launchpad.rasi" ;;
         lock-screen)     echo "xflock4" ;;
