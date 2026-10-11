@@ -12,6 +12,10 @@ menu bar, Dock, Mission Control, hot corners, and settings with the same names, 
 look for them. Every part is built with performance and a low footprint in mind (see
 [Light by design](#macos-xfce)).
 
+If you like this or find it useful, support the project by buying me a coffee.
+
+<a href="https://www.buymeacoffee.com/antoniocosta" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 40px !important;width: 140px !important;" ></a>
+
 **What you get**
 
 - **Cmd-key shortcuts** (Cmd+C/V/T/W/Q, Cmd+Tab, Cmd+Space, Cmd+Shift+3/4/5) through [Toshy](https://github.com/RedBearAK/toshy)
