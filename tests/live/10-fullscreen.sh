@@ -54,6 +54,55 @@ check "the new window is not on the full-screen app's desktop" bash -c "[ \$(des
 eq "it went to the desktop before the Space"  "$(desk_of "$C")" 1
 eq "and the origin was put right"             "$(origin_of "$A")" 1
 
+t_begin "fullscreen: leaving and re-entering at once keeps the bookkeeping straight"
+reset_desktops; start_fullscreen
+A=$(open_win fs-a); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2
+for i in 1 2 3; do wmctrl -i -r "$A" -b add,fullscreen; sleep 0.04; wmctrl -i -r "$A" -b remove,fullscreen; sleep 0.04; done
+wmctrl -i -r "$A" -b add,fullscreen
+wait_until 5 bash -c "[ \$(ndesk) = 5 ] && [ \$(desk_of $A) = 2 ]"; sleep 1.2
+eq "one Space, no more"                   "$(ndesk)" 5
+eq "the app is on it"                     "$(desk_of "$A")" 2
+eq "it came from desktop 1"               "$(origin_of "$A")" 1
+C=$(open_win fs-new)
+wait_until 3 bash -c "[ \$(desk_of $C) = 1 ]"
+eq "a new window opens on the desktop before the Space" "$(desk_of "$C")" 1
+
+t_begin "fullscreen: a window that lands on a Space is sent back to the app's desktop"
+reset_desktops; start_fullscreen
+A=$(open_win fs-a); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2
+wmctrl -i -r "$A" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 2 ]"; go 0
+X=$(open_win fs-x); wmctrl -i -r "$X" -t 2
+wait_until 4 bash -c "[ \$(desk_of $X) != 2 ]"
+eq "it went to desktop 2 (the app's own)" "$(desk_of "$X")" 1
+check "the log says what was repaired"    grep -q "repair: " "$LIVE_TMP/fullscreen.log"
+
+t_begin "fullscreen: desktops added by someone else stay when the Space goes"
+reset_desktops; start_fullscreen
+A=$(open_win fs-a); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2
+wmctrl -i -r "$A" -b add,fullscreen
+wait_until 3 bash -c "[ \$(ndesk) = 5 ]"; sleep 0.5
+set_desktops 6; sleep 1
+eq "the ordinary desktops are now 5"      "$(cat "$XDG_STATE_HOME/fullscreen-spaces")" 5
+wmctrl -i -r "$A" -b remove,fullscreen
+wait_until 4 bash -c "[ \$(ndesk) = 5 ]"; sleep 1
+eq "the Space went, the added desktop stayed" "$(ndesk)" 5
+
+t_begin "fullscreen: --dump shows the Spaces"
+reset_desktops; start_fullscreen
+A=$(open_win fs-a); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2
+wmctrl -i -r "$A" -b add,fullscreen
+wait_until 3 bash -c "[ \$(ndesk) = 5 ]"
+check "it lists the full-screen app and its desktop" bash -c "'$BIN/fullscreen' --dump | grep -q 'full-screen (Space of desktop 1)'"
+wmctrl -i -r "$A" -b remove,fullscreen; sleep 1
+
+t_begin "fullscreen: a stale list of Spaces to remove is dropped"
+reset_desktops; stop_fullscreen
+xprop -root -f _MACOS_PENDING_SPACES 32c -set _MACOS_PENDING_SPACES 9
+start_fullscreen; sleep 1
+check "gone"                              bash -c "! xprop -root _MACOS_PENDING_SPACES | grep -q '= '"
+eq "no desktop was taken away"            "$(ndesk)" 4
+
 t_begin "fullscreen: the app's own dialog stays on top of it"
 reset_desktops; start_fullscreen
 A=$(open_win fs-app --child fs-dialog 4); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2

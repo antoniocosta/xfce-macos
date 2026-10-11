@@ -80,6 +80,7 @@ stop_fullscreen()  { [[ -n "${FS_PID:-}" ]] && kill "$FS_PID" 2>/dev/null; FS_PI
 reset_desktops() {  # back to 4 empty desktops, desktop 1, no leftovers
     for w in $(wmctrl -l | awk '{print $1}'); do wmctrl -i -c "$w"; done
     sleep 0.6; set_desktops 4; go 0; rm -f "$XDG_STATE_HOME/fullscreen-spaces"
+    xprop -root -remove _MACOS_PENDING_SPACES; xprop -root -remove _MACOS_LAYOUT_BUSY
 }
 export -f win_id desk_of ndesk curdesk active is_full origin_of mapped hex
 export HERE BIN

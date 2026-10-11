@@ -97,6 +97,89 @@ mc --close; sleep 0.6
 eq "nothing chosen: back in the app"       "$(curdesk)" 2
 wmctrl -i -r "$F" -b remove,fullscreen; sleep 1; stop_fullscreen
 
+t_begin "mission-control: removing the first desktop sends its windows to the right one"
+reset_desktops
+A=$(open_win mc-a); B=$(open_win mc-b); C=$(open_win mc-c)
+wmctrl -i -r "$A" -t 0; wmctrl -i -r "$B" -t 1; wmctrl -i -r "$C" -t 2; go 0
+mc_open
+read -r x y <<<"$(desk_corner 0)"; xdotool mousemove $((x + 20)) $((y + 20)); sleep 0.2; click_at "$x" "$y"
+eq "3 desktops"                            "$(ndesk)" 3
+eq "its window went in with desktop 2's"  "$(desk_of "$A")" 0
+eq "desktop 2's window is first now"       "$(desk_of "$B")" 0
+eq "later windows moved down one"          "$(desk_of "$C")" 1
+mc --close; sleep 0.3
+
+t_begin "mission-control: a minimized window moves with its desktop"
+reset_desktops
+A=$(open_win mc-a); M=$(open_win mc-min); C=$(open_win mc-c)
+wmctrl -i -r "$A" -t 1; wmctrl -i -r "$M" -t 2; wmctrl -i -r "$C" -t 3; go 2; xdotool windowminimize "$M"; sleep 0.5; go 0
+mc_open
+read -r x y <<<"$(desk_corner 1)"; xdotool mousemove $((x + 20)) $((y + 20)); sleep 0.2; click_at "$x" "$y"
+eq "the minimized window moved down one"   "$(desk_of "$M")" 1
+eq "and the one after it"                  "$(desk_of "$C")" 2
+mc --close; sleep 0.3
+
+t_begin "mission-control: a desktop with a full-screen Space can't be removed; the Space moves with it"
+reset_desktops; start_fullscreen
+A=$(open_win mc-a); F=$(open_win mc-full); B=$(open_win mc-b)
+wmctrl -i -r "$A" -t 0; wmctrl -i -r "$F" -t 1; wmctrl -i -r "$B" -t 3; go 1; wmctrl -i -a "$F"; sleep 0.2
+wmctrl -i -r "$F" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 2 ]"; sleep 0.5; go 0
+mc_open
+read -r x y <<<"$(desk_corner 1)"; xdotool mousemove $((x + 20)) $((y + 20)); sleep 0.2; click_at "$x" "$y"
+eq "nothing removed"                       "$(ndesk)" 5
+go 0; mc_open
+read -r x1 y1 <<<"$(desk_center 1)"; read -r x2 y2 <<<"$(desk_center 4)"
+drag "$x1" "$y1" $((x2 + 30)) "$y2"
+eq "the Space moved with its desktop"      "$(desk_of "$F")" 4
+eq "and still comes right after it"        "$(origin_of "$F")" 3
+eq "the window of the last desktop moved up" "$(desk_of "$B")" 2
+mc --close; sleep 0.8
+eq "the app is still full screen"          "$(is_full "$F" && echo yes)" yes
+wmctrl -i -r "$F" -b remove,fullscreen
+wait_until 4 bash -c "[ \$(ndesk) = 4 ]"; sleep 0.5
+eq "leaving full screen goes back to its desktop" "$(desk_of "$F")" 3
+stop_fullscreen
+
+t_begin "mission-control: a Space can't be dragged along the bar"
+reset_desktops; start_fullscreen
+F=$(open_win mc-full); wmctrl -i -r "$F" -t 1; go 1; wmctrl -i -a "$F"; sleep 0.2
+wmctrl -i -r "$F" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 2 ]"; sleep 0.5; go 0
+mc_open
+read -r x1 y1 <<<"$(desk_center 2)"; read -r x2 y2 <<<"$(desk_center 4)"
+drag "$x1" "$y1" $((x2 + 30)) "$y2"
+eq "it stayed where it is"                 "$(desk_of "$F")" 2
+mc --close; sleep 0.3
+wmctrl -i -r "$F" -b remove,fullscreen; sleep 1.2; stop_fullscreen
+
+t_begin "mission-control: a wallpaper that is not a good JPEG doesn't stop it"
+reset_desktops
+echo "this is not an image" > "$LIVE_TMP/bad.jpg"
+printf '\xff\xd8\xff\xe0 truncated' > "$LIVE_TMP/cut.jpg"
+for f in bad cut; do
+    xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -n -t string -s "$LIVE_TMP/$f.jpg"
+    mc_open
+    check "opens with a $f wallpaper"      test -f "$MISSION_CONTROL_LAYOUT"
+    check "and the program is still running" kill -0 "$MC_PID"
+    mc --close; sleep 0.3
+done
+xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -r
+
+t_begin "mission-control: windows and desktops changing while it is open show up"
+reset_desktops
+A=$(open_win mc-a); B=$(open_win mc-b)
+mc_open
+eq "two windows"                           "$(lay | grep -c '^item ')" 2
+wmctrl -i -c "$B"
+wait_until 4 bash -c "[ \$(grep -c '^item ' '$MISSION_CONTROL_LAYOUT') = 1 ]"
+eq "one window after one closes"           "$(lay | grep -c '^item ')" 1
+set_desktops 3
+wait_until 4 bash -c "[ \$(grep -c '^desk ' '$MISSION_CONTROL_LAYOUT') = 3 ]"
+eq "three desktops after the count changes" "$(lay | grep -c '^desk ')" 3
+mc --close; sleep 0.3
+set_desktops 4
+
 t_begin "mission-control: at 16 desktops there is no +"
 reset_desktops; set_desktops 16
 mc_open

@@ -41,6 +41,9 @@
 #include <unistd.h>
 #include <strings.h>
 #include <jpeglib.h>   /* after stdio.h */
+#include <setjmp.h>
+
+#include "../common/spaces.h"
 
 #define MAX_WIN 256
 #define MAX_DESK 32
@@ -59,6 +62,7 @@ struct win {                /* a window on any desktop (for the bar) */
     long desk;
     int x, y, wd, ht;       /* frame geometry */
     int fullscreen_space;   /* it has a full-screen Space of its own */
+    long origin;            /* ...and the desktop that Space came from; else -1 */
     char title[256], app[64];
     cairo_surface_t *icon;
     /* current desktop only, while open */
@@ -73,7 +77,7 @@ static Display *dpy;
 static Window root, ctl = None, ov = None;
 static int SW, SH, TW;
 static Atom A_CLIENTS, A_CLIENTS_PLAIN, A_ACTIVE, A_DESK, A_NDESK, A_CURDESK, A_TYPE, A_TYPE_NORMAL, A_TYPE_DIALOG,
-    A_STATE, A_HIDDEN, A_SKIP_TB, A_FULL, A_NAME, A_UTF8, A_ICON, A_ORIGIN, A_SEL, A_MSG;
+    A_STATE, A_HIDDEN, A_SKIP_TB, A_FULL, A_NAME, A_UTF8, A_ICON, A_ORIGIN, A_SEL, A_MSG, A_PENDING, A_BUSY;
 
 struct snap {                               /* a desktop's picture and the windows it shows */
     cairo_surface_t *img;                   /* TW x THUMB_H */
@@ -99,6 +103,8 @@ static double plus_x, plus_y, plus_w, plus_h;
 static int hover_item = -1, hover_desk = -1, hover_close = 0, hover_plus = 0;
 static int press_item = -1, dragging = 0;
 static int press_desk = -1, desk_dragging = 0;    /* reordering desktops in the bar */
+static int press_close = -1;                      /* the desktop whose x was pressed */
+static long refresh_due = -1;                     /* the layout changed while open: redraw at this time */
 static int press_x, press_y, ptr_x, ptr_y;
 
 static int is_normal_window(Window w);
@@ -156,6 +162,8 @@ static void activate(Window w) { client_msg(w, A_ACTIVE, 2, CurrentTime, 0); }
 static void move_to_desktop(Window w, long d) { client_msg(w, A_DESK, d, 2, 0); }
 static void set_desktops(long n) { client_msg(root, A_NDESK, n, 0, 0); }
 static void switch_desktop(long d) { client_msg(root, A_CURDESK, d, CurrentTime, 0); }
+static void set_desktops_wait(long n) { set_desktops(n); sp_wait_card(dpy, root, A_NDESK, n, SP_WAIT_MS); }
+static void switch_wait(long d) { switch_desktop(d); sp_wait_card(dpy, root, A_CURDESK, d, SP_WAIT_MS); }
 
 static Window frame_of(Window w) {
     Window r, parent, *kids; unsigned int nk;
@@ -200,7 +208,9 @@ static cairo_surface_t *load_icon(Window w) {
     cairo_surface_t *s = NULL;
     if (best >= 0) {
         long iw = d[best], ih = d[best + 1];
+        if (iw > 4096 || ih > 4096) { XFree(d); return NULL; }
         s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, (int)iw, (int)ih);
+        if (cairo_surface_status(s) != CAIRO_STATUS_SUCCESS) { cairo_surface_destroy(s); XFree(d); return NULL; }
         unsigned char *px = cairo_image_surface_get_data(s);
         int stride = cairo_image_surface_get_stride(s);
         for (long y = 0; y < ih; y++)
@@ -218,9 +228,9 @@ static cairo_surface_t *load_icon(Window w) {
 
 static void read_title(Window w, char *out, size_t n) {
     unsigned long len; char *t = (char *)get_prop(w, A_NAME, A_UTF8, &len);
-    if (t) { snprintf(out, n, "%s", t); XFree(t); return; }
+    if (t) { sp_copy_utf8(out, n, t); XFree(t); return; }
     XTextProperty tp;
-    if (XGetWMName(dpy, w, &tp) && tp.value) { snprintf(out, n, "%s", (char *)tp.value); XFree(tp.value); return; }
+    if (XGetWMName(dpy, w, &tp) && tp.value) { sp_copy_utf8(out, n, (char *)tp.value); XFree(tp.value); return; }
     out[0] = 0;
 }
 
@@ -265,7 +275,8 @@ static void read_windows(void) {
         XWindowAttributes a;
         if (!XGetWindowAttributes(dpy, v->frame, &a)) continue;
         v->x = a.x; v->y = a.y; v->wd = a.width; v->ht = a.height;
-        v->fullscreen_space = get_card(w, A_ORIGIN, -1) >= 0 && has_atom(w, A_STATE, A_FULL);
+        v->origin = get_card(w, A_ORIGIN, -1);
+        v->fullscreen_space = v->origin >= 0 && has_atom(w, A_STATE, A_FULL);
         read_title(w, v->title, sizeof v->title);
         read_app(w, v->app, sizeof v->app);
         v->icon = load_icon(w);
@@ -354,7 +365,8 @@ static cairo_surface_t *find_snapshot(long d) {
         struct snap *s = &snaps[i];
         if (!s->img) continue;
         int c = overlap(s, set, n);
-        if (c * 2 >= n && c * 2 >= s->n && c > best_common) { best = s; best_common = c; }
+        if (c * 2 >= n && c * 2 >= s->n && (c > best_common || (c == best_common && best && s->used > best->used)))
+            { best = s; best_common = c; }
     }
     return best ? best->img : NULL;
 }
@@ -396,27 +408,51 @@ static int wallpaper_path(long d, char *out, size_t n) {
     return out[0] != 0;
 }
 
+struct jpeg_failure { struct jpeg_error_mgr pub; jmp_buf jump; };
+static void jpeg_fail(j_common_ptr ci) { longjmp(((struct jpeg_failure *)ci->err)->jump, 1); }   /* the default exit()s */
+static void jpeg_quiet(j_common_ptr ci) { (void)ci; }
+
 static cairo_surface_t *load_jpeg(const char *path) {   /* decoded at the smallest size >= screen */
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
+    unsigned char magic[3] = {0};
+    if (fread(magic, 1, 3, f) != 3 || magic[0] != 0xFF || magic[1] != 0xD8 || magic[2] != 0xFF) {   /* not a JPEG */
+        fclose(f);
+        return NULL;
+    }
+    rewind(f);
     struct jpeg_decompress_struct ci;
-    struct jpeg_error_mgr jerr;
-    ci.err = jpeg_std_error(&jerr);
+    struct jpeg_failure jerr;
+    unsigned char *volatile row = NULL;
+    cairo_surface_t *volatile s = NULL;
+    ci.err = jpeg_std_error(&jerr.pub);
+    jerr.pub.error_exit = jpeg_fail;                     /* a damaged file must not end the program */
+    jerr.pub.output_message = jpeg_quiet;
+    if (setjmp(jerr.jump)) {
+        jpeg_destroy_decompress(&ci);
+        fclose(f);
+        free(row);
+        if (s) cairo_surface_destroy(s);
+        return NULL;
+    }
     jpeg_create_decompress(&ci);
     jpeg_stdio_src(&ci, f);
-    if (jpeg_read_header(&ci, TRUE) != JPEG_HEADER_OK) { jpeg_destroy_decompress(&ci); fclose(f); return NULL; }
+    jpeg_read_header(&ci, TRUE);
     ci.out_color_space = JCS_RGB;
     ci.scale_num = 1;
     ci.scale_denom = 1;
     for (int den = 8; den > 1; den /= 2)
         if (ci.image_width / den >= (unsigned)SW && ci.image_height / den >= (unsigned)SH) { ci.scale_denom = den; break; }
     jpeg_start_decompress(&ci);
-    cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_RGB24, ci.output_width, ci.output_height);
-    unsigned char *px = cairo_image_surface_get_data(s), *row = malloc(ci.output_width * 3);
+    s = cairo_image_surface_create(CAIRO_FORMAT_RGB24, ci.output_width, ci.output_height);
+    row = malloc(ci.output_width * 3);
+    if (cairo_surface_status(s) != CAIRO_STATUS_SUCCESS || !row || ci.output_components != 3) longjmp(jerr.jump, 1);
+    unsigned char *px = cairo_image_surface_get_data(s);
     int stride = cairo_image_surface_get_stride(s);
-    while (row && ci.output_scanline < ci.output_height) {
+    while (ci.output_scanline < ci.output_height) {
         unsigned y = ci.output_scanline;
-        jpeg_read_scanlines(&ci, &row, 1);
+        unsigned char *rp = row;
+        jpeg_read_scanlines(&ci, &rp, 1);
         uint32_t *o = (uint32_t *)(px + y * stride);
         for (unsigned x = 0; x < ci.output_width; x++)
             o[x] = (uint32_t)row[x * 3] << 16 | (uint32_t)row[x * 3 + 1] << 8 | row[x * 3 + 2];
@@ -541,14 +577,17 @@ static void rounded(cairo_t *cr, double x, double y, double w, double h, double 
 }
 
 static void text_centered(cairo_t *cr, const char *s, double cx, double y, double size, double maxw) {
-    char buf[256];
-    snprintf(buf, sizeof buf, "%s", s);
+    char full[256], buf[256];
+    sp_copy_utf8(full, sizeof full - 4, s);              /* (room for the ellipsis) */
+    snprintf(buf, sizeof buf, "%s", full);
     cairo_select_font_face(cr, "Inter", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     cairo_set_font_size(cr, size);
     cairo_text_extents_t e;
     cairo_text_extents(cr, buf, &e);
-    for (size_t n = strlen(buf); e.width > maxw && n > 4; n--) {      /* shorten with an ellipsis */
-        strcpy(buf + n - 4, "…");
+    for (size_t keep = strlen(full); e.width > maxw && keep > 1; ) {   /* shorten with an ellipsis, between characters */
+        keep--;
+        sp_copy_utf8(buf, keep + 1, full);               /* the first `keep` bytes, whole characters only */
+        strcat(buf, "…");
         cairo_text_extents(cr, buf, &e);
     }
     cairo_move_to(cr, cx - e.width / 2 - e.x_bearing, y);
@@ -565,6 +604,13 @@ static int desk_is_space(int d) {
     for (int i = 0; i < nwins; i++) if (wins[i].desk == d && wins[i].fullscreen_space) return 1;
     return 0;
 }
+
+static int desk_has_spaces(int d) {          /* full-screen Spaces came from this desktop */
+    for (int i = 0; i < nwins; i++) if (wins[i].fullscreen_space && wins[i].origin == d) return 1;
+    return 0;
+}
+
+static int can_close(int d) { return ndesk > 1 && !desk_has_spaces(d); }   /* (leave its full-screen apps first) */
 
 static void draw_desk(cairo_t *cr, int d, double at_x) {
     struct desk kk = desks[d], *k = &kk;
@@ -627,7 +673,7 @@ static void draw_desk(cairo_t *cr, int d, double at_x) {
     desk_name(d, name, sizeof name);
     cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
     text_centered(cr, name, k->x + k->w / 2, k->y + k->h + 18, 12, k->w + GAP - 4);
-    if (d == hover_desk && !dragging && !desk_dragging && ndesk > 1) {   /* the x to remove it, top left */
+    if (d == hover_desk && !dragging && !desk_dragging && can_close(d)) {   /* the x to remove it, top left */
         cairo_arc(cr, k->x, k->y, 9, 0, 2 * M_PI);
         cairo_set_source_rgba(cr, hover_close ? 0.9 : 0.75, hover_close ? 0.9 : 0.75, hover_close ? 0.9 : 0.75, 1);
         cairo_fill(cr);
@@ -783,7 +829,7 @@ static void update_hover(int x, int y) {
         struct desk *k = &desks[d];
         if (x >= k->x - 10 && x < k->x + k->w && y >= k->y - 10 && y < k->y + k->h + LABEL_H) {
             hover_desk = d;
-            hover_close = hypot(x - k->x, y - k->y) <= 10;
+            hover_close = hypot(x - k->x, y - k->y) <= 10 && can_close(d);
         }
     }
     for (int k = nitems - 1; k >= 0; k--) {
@@ -834,7 +880,7 @@ static void open_mc(void) {
         XMapRaised(dpy, ov);
         XSync(dpy, False);
         switch_desktop(view);
-        for (int i = 0; i < 30 && get_card(root, A_CURDESK, -1) != view; i++) { XSync(dpy, False); usleep(10000); }
+        sp_wait_card(dpy, root, A_CURDESK, view, 500);
         usleep(80000);                                   /* its windows are mapped */
     }
     XCompositeRedirectSubwindows(dpy, root, CompositeRedirectAutomatic);   /* window images, even
@@ -876,76 +922,125 @@ static void close_mc(Window go_to, long switch_to) {
 /* ---- managing desktops ------------------------------------------------------------------- */
 
 static void refresh(void) {
+    long n = get_card(root, A_NDESK, 1);
+    if (view >= n) view = n - 1;                         /* desktops went away behind our back */
+    if (cur >= n) cur = n - 1;
     read_windows();
     layout_desks();
     layout_items();
+    update_hover(ptr_x, ptr_y);
     draw();
+}
+
+static void busy(int on) { sp_busy_set(dpy, root, A_BUSY, on); }   /* tells `fullscreen` to leave the layout alone */
+
+/* Renumber the desktops: `map[old]` is the new number of every window on desktop `old` (all windows,
+ * minimized and hidden ones too, not only those shown in the overview), and of every full-screen
+ * app's origin. It waits until the window manager has really moved them. */
+static void move_all(const long *map, long n) {
+    unsigned long cnt; Window *list = client_list(&cnt);
+    long *was = list ? malloc(sizeof(long) * cnt) : NULL;
+    if (!was) { if (list) XFree(list); return; }
+    for (unsigned long i = 0; i < cnt; i++) {
+        long d = get_card(list[i], A_DESK, -1);
+        was[i] = d;
+        if (!sp_sticky(d) && d < n && map[d] >= 0 && map[d] != d) move_to_desktop(list[i], map[d]);
+        long o = get_card(list[i], A_ORIGIN, -1);
+        if (o >= 0 && o < n && map[o] >= 0 && map[o] != o)
+            XChangeProperty(dpy, list[i], A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&map[o], 1);
+    }
+    for (unsigned long i = 0; i < cnt; i++)
+        if (!sp_sticky(was[i]) && was[i] < n && map[was[i]] >= 0)
+            sp_wait_card(dpy, list[i], A_DESK, map[was[i]], SP_WAIT_MS);
+    free(was);
+    XFree(list);
 }
 
 static void add_desktop(Window carry) {
     long n = get_card(root, A_NDESK, 1);
     if (n >= MAX_SPACES) return;
-    set_desktops(n + 1);
+    busy(1);
+    set_desktops_wait(n + 1);
     adjust_base(+1);
-    XSync(dpy, False);
-    if (carry != None) move_to_desktop(carry, n);
-    XSync(dpy, False);
-    usleep(50000);
+    if (carry != None) { move_to_desktop(carry, n); sp_wait_card(dpy, carry, A_DESK, n, SP_WAIT_MS); }
+    busy(0);
     refresh();
+}
+
+static void leave_full_screen(int d) {                   /* × on a full-screen app's Space */
+    Atom state = XInternAtom(dpy, "_NET_WM_STATE", False);
+    for (int i = 0; i < nwins; i++)
+        if (wins[i].desk == d && wins[i].fullscreen_space)
+            client_msg(wins[i].w, state, 0, (long)A_FULL, 0);
+    for (int t = 0; t < 600; t += 10) {
+        int still = 0;
+        for (int i = 0; i < nwins; i++)
+            if (wins[i].desk == d && wins[i].fullscreen_space && has_atom(wins[i].w, A_STATE, A_FULL)) still = 1;
+        if (!still) break;
+        XSync(dpy, False);
+        usleep(10000);
+    }
+    refresh();       /* (`fullscreen` takes the empty Space away by itself) */
 }
 
 static void remove_desktop(int d) {
     long n = get_card(root, A_NDESK, 1);
-    if (n <= 1 || d < 0 || d >= n) return;
-    if (desk_is_space(d)) {                              /* a full-screen Space: leave full screen */
-        for (int i = 0; i < nwins; i++)
-            if (wins[i].desk == d && wins[i].fullscreen_space)
-                client_msg(wins[i].w, XInternAtom(dpy, "_NET_WM_STATE", False), 0, (long)A_FULL, 0);
-        XSync(dpy, False);
-        usleep(150000);
-        refresh();
-        return;
-    }
-    long to = d > 0 ? d - 1 : 1;                         /* its windows go to the neighbour */
-    for (int i = 0; i < nwins; i++) if (wins[i].desk == d) move_to_desktop(wins[i].w, to);
-    for (int i = 0; i < nwins; i++) if (wins[i].desk > d) move_to_desktop(wins[i].w, wins[i].desk - 1);
-    for (int i = 0; i < nwins; i++) {                    /* full-screen windows' own desktop numbers */
-        long o = get_card(wins[i].w, A_ORIGIN, -1);
-        if (o < 0) continue;
-        long no = o == d ? (to > d ? to - 1 : to) : (o > d ? o - 1 : o);
-        if (no != o) XChangeProperty(dpy, wins[i].w, A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&no, 1);
-    }
-    if (view > d) view--;
-    if (cur >= d && cur > 0) { cur--; switch_desktop(cur); }
-    XSync(dpy, False);
-    set_desktops(n - 1);
-    adjust_base(-1);
-    XSync(dpy, False);
-    usleep(50000);
+    if (n <= 1 || n > MAX_DESK || d < 0 || d >= n) return;
+    if (desk_is_space(d)) { leave_full_screen(d); return; }
+    if (desk_has_spaces(d)) return;                      /* full-screen apps came from it: leave them first */
+    long to = -1;                                        /* its windows go to the nearest ordinary desktop */
+    for (long x = d - 1; x >= 0 && to < 0; x--) if (!desk_is_space(x)) to = x;
+    for (long x = d + 1; x < n && to < 0; x++) if (!desk_is_space(x)) to = x;
+    if (to < 0) return;
+    long map[MAX_DESK], pmap[MAX_DESK];
+    for (long x = 0; x < n; x++) map[x] = x < d ? x : x - 1;
+    map[d] = map[to];
+    memcpy(pmap, map, sizeof map);
+    pmap[d] = -1;
+    long pend[SP_MAX], was_pending = 0;
+    int np = sp_pending_read(dpy, root, A_PENDING, pend, SP_MAX);
+    for (int i = 0; i < np; i++) if (pend[i] == d) was_pending = 1;
+    busy(1);
+    move_all(map, n);
+    sp_pending_remap(dpy, root, A_PENDING, pmap, (int)n);
+    long here = get_card(root, A_CURDESK, 0);
+    if (here >= 0 && here < n && map[here] != here) switch_wait(map[here]);   /* the same windows stay in view */
+    set_desktops_wait(n - 1);
+    if (!was_pending) adjust_base(-1);                   /* (an empty Space waiting to go is not an ordinary desktop) */
+    cur = map[cur < n ? cur : n - 1];
+    view = map[view < n ? view : n - 1];
+    busy(0);
     refresh();
 }
 
-/* move desktop `from` to position `to`; windows go with their desktop */
+/* move desktop `from` to position `to`; windows go with their desktop. A full-screen app's Space always
+ * stays right after the desktop it came from, so a desktop moves together with its Spaces, and a Space
+ * itself cannot be moved */
 static void reorder_desktops(int from, int to) {
     long n = get_card(root, A_NDESK, 1);
-    if (from < 0 || from >= n || to < 0 || to >= n || from == to) return;
-    long order[MAX_DESK], newpos[MAX_DESK];
-    int k = 0;
-    for (int d = 0; d < n; d++) if (d != from) order[k++] = d;
-    memmove(&order[to + 1], &order[to], sizeof(long) * (n - 1 - to));
-    order[to] = from;
-    for (int i = 0; i < n; i++) newpos[order[i]] = i;
-    for (int i = 0; i < nwins; i++) {
-        if (newpos[wins[i].desk] != wins[i].desk) move_to_desktop(wins[i].w, newpos[wins[i].desk]);
-        long o = get_card(wins[i].w, A_ORIGIN, -1);      /* the fullscreen utility's bookkeeping */
-        if (o >= 0 && o < n && newpos[o] != o)
-            XChangeProperty(dpy, wins[i].w, A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&newpos[o], 1);
+    if (n > MAX_DESK || from < 0 || from >= n || to < 0 || to >= n || from == to || desk_is_space(from)) return;
+    int unit[MAX_DESK], ustart[MAX_DESK], ulen[MAX_DESK], nu = 0;
+    for (int x = 0; x < n; x++) {
+        if (x > 0 && desk_is_space(x)) { unit[x] = unit[x - 1]; ulen[unit[x]]++; }
+        else { unit[x] = nu; ustart[nu] = x; ulen[nu] = 1; nu++; }
     }
-    view = newpos[view];
-    if (newpos[cur] != cur) { cur = newpos[cur]; if (view == cur) switch_desktop(cur); }
-    if (view != cur) switch_desktop(view);
-    XSync(dpy, False);
-    usleep(50000);
+    int uf = unit[from], ut = unit[to];
+    if (uf == ut) { draw(); return; }
+    int order[MAX_DESK], k = 0, pos = 0;
+    for (int u = 0; u < nu; u++) { if (u == ut) pos = k + (ut > uf); if (u != uf) order[k++] = u; }
+    memmove(&order[pos + 1], &order[pos], sizeof(int) * (k - pos));
+    order[pos] = uf;
+    long map[MAX_DESK];
+    int idx = 0;
+    for (int i = 0; i < nu; i++) for (int j = 0; j < ulen[order[i]]; j++) map[ustart[order[i]] + j] = idx++;
+    busy(1);
+    move_all(map, n);
+    sp_pending_remap(dpy, root, A_PENDING, map, (int)n);
+    long here = get_card(root, A_CURDESK, 0);
+    if (here >= 0 && here < n && map[here] != here) switch_wait(map[here]);
+    cur = map[cur < n ? cur : n - 1];
+    view = map[view < n ? view : n - 1];
+    busy(0);
     refresh();
 }
 
@@ -959,14 +1054,15 @@ static void on_release(int x, int y) {
         if (to != from) reorder_desktops(from, to); else draw();
         return;
     }
-    int pdesk = press_desk;
-    press_desk = -1;
+    int pdesk = press_desk, pclose = press_close;
+    press_desk = press_close = -1;
     if (dragging) {
         Window w = wins[press_item].w;
         dragging = 0; press_item = -1;
-        if (hover_desk >= 0 && hover_desk != view) {
+        if (hover_desk >= 0 && hover_desk != view && !desk_is_space(hover_desk)) {   /* (a full-screen app's Space is its app's alone) */
             move_to_desktop(w, hover_desk);
-            XSync(dpy, False); usleep(30000); refresh();
+            sp_wait_card(dpy, w, A_DESK, hover_desk, SP_WAIT_MS);
+            refresh();
         } else if (hover_plus) {
             add_desktop(w);
         } else {
@@ -976,14 +1072,32 @@ static void on_release(int x, int y) {
     }
     int pressed = press_item;
     press_item = -1;
-    if (hover_close && hover_desk >= 0) { remove_desktop(hover_desk); return; }
+    if (hover_close && hover_desk >= 0) {                /* only if it was pressed there too */
+        if (hover_desk == pclose) remove_desktop(hover_desk); else draw();
+        return;
+    }
     if (hover_plus) { add_desktop(None); return; }
     if (hover_item >= 0 && pressed >= 0 && cur_items[hover_item] == pressed) { close_mc(wins[pressed].w, -1); return; }
     if (hover_desk >= 0 && hover_desk == pdesk) { close_mc(None, hover_desk); return; }
     close_mc(None, -1);
 }
 
+static void resized(int w, int h) {                      /* the screen changed size */
+    if (is_open) close_mc(None, -1);
+    SW = w; SH = h; TW = THUMB_H * SW / SH;
+    if (ov != None) { XDestroyWindow(dpy, ov); ov = None; }
+    for (int i = 0; i < MAX_SNAP; i++) {                 /* the pictures are the wrong size now */
+        if (snaps[i].img) cairo_surface_destroy(snaps[i].img);
+        memset(&snaps[i], 0, sizeof snaps[i]);
+    }
+}
+
 static void handle(XEvent *e) {
+    if (e->type == SelectionClear) exit(0);              /* another copy took over */
+    if (e->type == ConfigureNotify && e->xconfigure.window == root) {
+        if (e->xconfigure.width != SW || e->xconfigure.height != SH) resized(e->xconfigure.width, e->xconfigure.height);
+        return;
+    }
     if (e->type == ClientMessage && e->xclient.message_type == A_MSG) {
         long what = e->xclient.data.l[0];                /* 0 toggle, 1 quit, 2 open, 3 close */
         if (what == 1) exit(0);                          /* a new copy takes over */
@@ -993,6 +1107,9 @@ static void handle(XEvent *e) {
     }
     if (e->type == PropertyNotify && e->xproperty.window == root) {
         if (e->xproperty.atom == A_CURDESK) snap_due = now_ms() + SNAP_DELAY_MS;   /* hook: arrived */
+        if (is_open && (e->xproperty.atom == A_CLIENTS || e->xproperty.atom == A_CLIENTS_PLAIN ||
+                        e->xproperty.atom == A_NDESK || e->xproperty.atom == A_CURDESK))
+            refresh_due = now_ms() + 80;                 /* something changed the desktops or windows: show it */
         return;
     }
     /* hook: a window opened, closed, moved or resized (menus and pop-ups don't count) */
@@ -1000,7 +1117,9 @@ static void handle(XEvent *e) {
         (e->type == UnmapNotify && e->xunmap.event == root) ||
         (e->type == ConfigureNotify && !e->xconfigure.override_redirect && e->xconfigure.event == root)) {
         Window w = e->type == MapNotify ? e->xmap.window : e->type == UnmapNotify ? e->xunmap.window : e->xconfigure.window;
-        if (!is_open && w != ov && w != ctl) snap_due = now_ms() + SNAP_DELAY_MS;
+        XWindowAttributes wa;                            /* tooltips and menus coming and going are not worth a picture */
+        int popup = e->type == UnmapNotify && XGetWindowAttributes(dpy, w, &wa) && wa.override_redirect;
+        if (!is_open && w != ov && w != ctl && !popup) snap_due = now_ms() + SNAP_DELAY_MS;
         return;
     }
     if (!is_open) return;
@@ -1013,7 +1132,7 @@ static void handle(XEvent *e) {
         ptr_x = e->xmotion.x; ptr_y = e->xmotion.y;
         int hi = hover_item, hd = hover_desk, hc = hover_close, hp = hover_plus;
         if (press_item >= 0 && !dragging && hypot(ptr_x - press_x, ptr_y - press_y) > DRAG_PX) dragging = 1;
-        if (press_desk >= 0 && !desk_dragging && hypot(ptr_x - press_x, ptr_y - press_y) > DRAG_PX) desk_dragging = 1;
+        if (press_desk >= 0 && !desk_dragging && !desk_is_space(press_desk) && hypot(ptr_x - press_x, ptr_y - press_y) > DRAG_PX) desk_dragging = 1;
         update_hover(ptr_x, ptr_y);
         if (dragging || desk_dragging || hi != hover_item || hd != hover_desk || hc != hover_close || hp != hover_plus) draw();
         break;
@@ -1024,13 +1143,14 @@ static void handle(XEvent *e) {
         update_hover(press_x, press_y);
         press_item = hover_item >= 0 ? cur_items[hover_item] : -1;
         press_desk = (hover_desk >= 0 && !hover_close && press_y < bar_h()) ? hover_desk : -1;
+        press_close = hover_close ? hover_desk : -1;
         break;
     case ButtonRelease:
         if (e->xbutton.button == 1) on_release(e->xbutton.x, e->xbutton.y);
         break;
     case KeyPress: {
         KeySym k = XLookupKeysym(&e->xkey, 0);
-        if (k == XK_Escape || k == XK_F3 || k == XF86XK_LaunchA || k == XK_Up) close_mc(None, -1);
+        if (k == XK_Escape || k == XK_F3 || k == XF86XK_LaunchA || (k == XK_Up && (e->xkey.state & ControlMask))) close_mc(None, -1);
         else if (k == XK_Return && hover_item >= 0) close_mc(wins[cur_items[hover_item]].w, -1);
         break;
     }
@@ -1070,6 +1190,8 @@ int main(int argc, char **argv) {
     A_ORIGIN = XInternAtom(dpy, "_MACOS_FULLSCREEN_ORIGIN", False);
     A_SEL = XInternAtom(dpy, "_MACOS_MISSION_CONTROL", False);
     A_MSG = XInternAtom(dpy, "_MACOS_MISSION_CONTROL_MSG", False);
+    A_PENDING = XInternAtom(dpy, "_MACOS_PENDING_SPACES", False);
+    A_BUSY = XInternAtom(dpy, "_MACOS_LAYOUT_BUSY", False);
 
     Window owner = XGetSelectionOwner(dpy, A_SEL);
     if (owner != None) {                                 /* a copy runs: ask it */
@@ -1084,7 +1206,7 @@ int main(int argc, char **argv) {
     }
     ctl = XCreateSimpleWindow(dpy, root, -1, -1, 1, 1, 0, 0, 0);
     XSetSelectionOwner(dpy, A_SEL, ctl, CurrentTime);
-    XSelectInput(dpy, root, PropertyChangeMask | SubstructureNotifyMask);
+    XSelectInput(dpy, root, PropertyChangeMask | SubstructureNotifyMask | StructureNotifyMask);
     if (what == 3) return 0;
     if (!daemon) open_mc();                              /* no copy running: open once */
 
@@ -1096,6 +1218,13 @@ int main(int argc, char **argv) {
                 snap_due = -1;
                 if (!is_open) take_snapshot();
             } else timeout = (int)left;
+        }
+        if (refresh_due >= 0) {
+            long left = refresh_due - now_ms();
+            if (!is_open) refresh_due = -1;
+            else if (press_item >= 0 || press_desk >= 0 || dragging || desk_dragging) timeout = 100;   /* not under the pointer's feet */
+            else if (left <= 0) { refresh_due = -1; refresh(); }
+            else if (timeout < 0 || timeout > left) timeout = (int)left;
         }
         if (!daemon && !is_open) return 0;
         XFlush(dpy);
