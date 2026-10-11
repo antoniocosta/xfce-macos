@@ -10,7 +10,7 @@
  *
  * For tests: with MISSION_CONTROL_LAYOUT=<file> set, every redraw writes where the desktops, the +
  * and the windows are drawn to that file (one per line: "desk N x y w h picture name",
- * "plus x y w h", "item 0xWINDOW x y w h", "view N", "cur N").
+ * "plus x y w h", "item 0xWINDOW x y w h [min]", "view N", "cur N").
  *
  * Usage: mission-control            toggle (asks the running copy; opens once if none runs)
  *        mission-control --open     open (3-finger swipe up); --close: close (swipe down)
@@ -63,6 +63,7 @@ struct win {                /* a window on any desktop (for the bar) */
     int x, y, wd, ht;       /* frame geometry */
     int fullscreen_space;   /* it has a full-screen Space of its own */
     long origin;            /* ...and the desktop that Space came from; else -1 */
+    int minimized;          /* minimized: drawn dimmed with a badge (a click brings it back) */
     char title[256], app[64];
     cairo_surface_t *icon;
     /* current desktop only, while open */
@@ -246,11 +247,15 @@ static void read_app(Window w, char *out, size_t n) {
     }
 }
 
-static int is_normal_window(Window w) {
+static int is_app_window(Window w) {           /* a window of an app (minimized or not) */
     unsigned long n; Atom *t = (Atom *)get_prop(w, A_TYPE, XA_ATOM, &n);
     int ok = !t || t[0] == A_TYPE_NORMAL || t[0] == A_TYPE_DIALOG;
     if (t) XFree(t);
-    return ok && !has_atom(w, A_STATE, A_SKIP_TB) && !has_atom(w, A_STATE, A_HIDDEN);
+    return ok && !has_atom(w, A_STATE, A_SKIP_TB);
+}
+
+static int is_normal_window(Window w) {        /* ...and showing (the desktop pictures go by these) */
+    return is_app_window(w) && !has_atom(w, A_STATE, A_HIDDEN);
 }
 
 static void free_wins(void) {
@@ -268,22 +273,25 @@ static void read_windows(void) {
     for (unsigned long i = 0; list && i < n && nwins < MAX_WIN; i++) {
         Window w = list[i];
         long d = get_card(w, A_DESK, -1);
-        if (d < 0 || d == 0xFFFFFFFF || !is_normal_window(w)) continue;
+        if (d < 0 || d == 0xFFFFFFFF || !is_app_window(w)) continue;
         struct win *v = &wins[nwins];
         memset(v, 0, sizeof *v);
         v->w = w; v->desk = d; v->frame = frame_of(w);
+        v->minimized = has_atom(w, A_STATE, A_HIDDEN);
         XWindowAttributes a;
-        if (!XGetWindowAttributes(dpy, v->frame, &a)) continue;
+        if (!XGetWindowAttributes(dpy, v->frame, &a) || a.width < 2 || a.height < 2) continue;
         v->x = a.x; v->y = a.y; v->wd = a.width; v->ht = a.height;
         v->origin = get_card(w, A_ORIGIN, -1);
         v->fullscreen_space = v->origin >= 0 && has_atom(w, A_STATE, A_FULL);
         read_title(w, v->title, sizeof v->title);
         read_app(w, v->app, sizeof v->app);
         v->icon = load_icon(w);
-        if (d == view && a.map_state == IsViewable && !v->fullscreen_space) {   /* a full-screen app
-                                                         is its own Space: only in the bar */
-            v->pm = XCompositeNameWindowPixmap(dpy, v->frame);
-            if (v->pm) v->surf = cairo_xlib_surface_create(dpy, v->pm, a.visual, a.width, a.height);
+        if (d == view && (a.map_state == IsViewable || v->minimized) && !v->fullscreen_space) {   /* a full-screen
+                                                         app is its own Space: only in the bar */
+            if (!v->minimized) {                          /* (a minimized window has no image to show) */
+                v->pm = XCompositeNameWindowPixmap(dpy, v->frame);
+                if (v->pm) v->surf = cairo_xlib_surface_create(dpy, v->pm, a.visual, a.width, a.height);
+            }
             cur_items[nitems++] = nwins;
         }
         nwins++;
@@ -357,7 +365,7 @@ static void take_snapshot(void) {             /* the current desktop, as it look
 static cairo_surface_t *find_snapshot(long d) {
     Window set[SNAP_WINS];
     int n = 0;
-    for (int i = 0; i < nwins && n < SNAP_WINS; i++) if (wins[i].desk == d) set[n++] = wins[i].w;
+    for (int i = 0; i < nwins && n < SNAP_WINS; i++) if (wins[i].desk == d && !wins[i].minimized) set[n++] = wins[i].w;
     if (!n) return NULL;
     qsort(set, n, sizeof(Window), cmp_win);
     struct snap *best = NULL; int best_common = 0;
@@ -640,7 +648,7 @@ static void draw_desk(cairo_t *cr, int d, double at_x) {
         double s = k->w / SW;
         for (int i = 0; i < nwins; i++) {
             struct win *v = &wins[i];
-            if (v->desk != d) continue;
+            if (v->desk != d || v->minimized) continue;
             double x = k->x + v->x * s, y = k->y + v->y * s, w = v->wd * s, h = v->ht * s;
             rounded(cr, x, y, w, h, 3);
             cairo_set_source_rgba(cr, 0.25, 0.25, 0.27, 0.9);
@@ -729,7 +737,7 @@ static void dump_layout(void) {   /* for tests (MISSION_CONTROL_LAYOUT) */
     if (plus_w > 0) fprintf(f, "plus %.0f %.0f %.0f %.0f\n", plus_x, plus_y, plus_w, plus_h);
     for (int k = 0; k < nitems; k++) {
         struct win *v = &wins[cur_items[k]];
-        fprintf(f, "item 0x%lx %.0f %.0f %.0f %.0f\n", v->w, v->tx, v->ty, v->tw, v->th);
+        fprintf(f, "item 0x%lx %.0f %.0f %.0f %.0f%s\n", v->w, v->tx, v->ty, v->tw, v->th, v->minimized ? " min" : "");
     }
     fclose(f);
     rename(tmp, path);
@@ -784,12 +792,32 @@ static void draw(void) {
             cairo_set_source_surface(cr, v->surf, 0, 0);
             cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
             cairo_paint(cr);
+        } else if (v->minimized) {                       /* dimmed, with its icon: it is in the Dock on a Mac */
+            cairo_set_source_rgba(cr, 0.2, 0.2, 0.22, 0.55);
+            cairo_paint(cr);
+            if (v->icon) {
+                double is = fmin(fmin(w, h) * 0.45, 72), iw = cairo_image_surface_get_width(v->icon);
+                cairo_translate(cr, x + (w - is) / 2, y + (h - is) / 2);
+                cairo_scale(cr, is / iw, is / iw);
+                cairo_set_source_surface(cr, v->icon, 0, 0);
+                cairo_paint_with_alpha(cr, 0.7);
+            }
         } else {
             cairo_set_source_rgba(cr, 0.3, 0.3, 0.32, 1);
             cairo_paint(cr);
         }
         if (drag_this) { cairo_pop_group_to_source(cr); cairo_reset_clip(cr); cairo_paint_with_alpha(cr, 0.85); }
         cairo_restore(cr);
+        if (v->minimized && !drag_this) {                /* the badge: the yellow minimize button */
+            double bx = x + w - 14, by = y + h - 14;
+            cairo_arc(cr, bx, by, 9, 0, 2 * M_PI);
+            cairo_set_source_rgba(cr, 1.0, 0.74, 0.18, 1);
+            cairo_fill(cr);
+            cairo_set_source_rgba(cr, 0.35, 0.22, 0.0, 1);
+            cairo_set_line_width(cr, 2);
+            cairo_move_to(cr, bx - 4, by); cairo_line_to(cr, bx + 4, by);
+            cairo_stroke(cr);
+        }
         if (k == hover_item && !dragging) {
             rounded(cr, x - 3, y - 3, w + 6, h + 6, 8);
             cairo_set_source_rgba(cr, 0.25, 0.55, 1, 0.9);

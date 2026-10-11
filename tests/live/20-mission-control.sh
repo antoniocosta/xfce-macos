@@ -166,6 +166,20 @@ for f in bad cut; do
 done
 xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -r
 
+t_begin "mission-control: a minimized window is shown, dimmed, and a click brings it back"
+reset_desktops
+A=$(open_win mc-a); B=$(open_win mc-b)
+xdotool windowminimize "$B"; sleep 0.6
+check "it is minimized"                    bash -c "xprop -id $B _NET_WM_STATE | grep -q HIDDEN"
+mc_open
+eq "both windows are listed"               "$(lay | grep -c '^item ')" 2
+eq "the minimized one is marked"           "$(lay | awk -v w="$(hex "$B")" '$1=="item" && $2==w {print $7}')" min
+eq "the other one is not"                  "$(lay | awk -v w="$(hex "$A")" '$1=="item" && $2==w {print $7}')" ""
+read -r x y <<<"$(item_center "$(hex "$B")")"; click_at "$x" "$y"
+wait_until 3 bash -c "! xprop -id $B _NET_WM_STATE | grep -q HIDDEN"
+check "clicking it brings it back"         bash -c "! xprop -id $B _NET_WM_STATE | grep -q HIDDEN"
+eq "and it is the active window"           "$(active)" "$(hex "$B")"
+
 t_begin "mission-control: the show-desktop corner does nothing behind it"
 reset_desktops
 A=$(open_win mc-a); wmctrl -i -a "$A"; sleep 0.3
