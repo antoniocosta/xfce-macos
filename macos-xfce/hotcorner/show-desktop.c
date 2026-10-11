@@ -88,6 +88,20 @@ int main(int argc, char **argv) {
     A_TYPE_DESKTOP = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
     A_MARK = XInternAtom(dpy, "_MACOS_SHOW_DESKTOP", False);
 
+    {   /* Mission Control open (it is a top-level window of ours named so): the corner must not act behind it */
+        Window r, p, *kids = NULL; unsigned int nk = 0;
+        if (XQueryTree(dpy, root, &r, &p, &kids, &nk)) {
+            for (unsigned int i = 0; i < nk; i++) {
+                char *name = NULL; XWindowAttributes wa;
+                if (XFetchName(dpy, kids[i], &name) && name) {
+                    int mc = !strcmp(name, "Mission Control") && XGetWindowAttributes(dpy, kids[i], &wa) && wa.map_state == IsViewable;
+                    XFree(name);
+                    if (mc) { XFree(kids); return 0; }
+                }
+            }
+            if (kids) XFree(kids);
+        }
+    }
     unsigned long n;                                       /* stacking order if there is one (it vanishes with no windows) */
     Window *list = (Window *)get_prop(root, A_CLIENTS, XA_WINDOW, &n);
     if (!list) list = (Window *)get_prop(root, A_CLIENTS_PLAIN, XA_WINDOW, &n);

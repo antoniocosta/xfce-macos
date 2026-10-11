@@ -322,6 +322,16 @@ static void enter_space(struct client *c, int quiet) {   /* quiet: adopt a windo
     long origin = desk_of(c->w);
     LOG("enter space 0x%lx from desktop %ld", c->w, origin);
     if (sp_sticky(origin)) return;                               /* sticky: stays where it is */
+    if (quiet && origin > 0 && read_base() >= 0 && get_card(root, A_NDESK, 1) > read_base()) {
+        int alone = 1;                                           /* a full-screen window alone on a desktop past the ordinary ones: */
+        for (int i = 0; i < ncl; i++) if (cl[i].w != c->w && desk_of(cl[i].w) == origin) alone = 0;
+        if (alone) {                                             /* it already has its Space (we were stopped half way through making it) */
+            LOG("adopt 0x%lx: alone on desktop %ld past the ordinary desktops, so that is its Space", c->w, origin);
+            set_origin(c, origin - 1);
+            c->space = (int)origin;
+            return;
+        }
+    }
     for (int i = 0; i < ncl; i++)                                /* it is on another app's Space already: that app's
                                                                     desktop is where this one comes from */
         if (cl[i].w != c->w && cl[i].origin >= 0 && cl[i].space == origin) { origin = sane_origin(&cl[i]); break; }

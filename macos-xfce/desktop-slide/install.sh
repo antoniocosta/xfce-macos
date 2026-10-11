@@ -16,17 +16,19 @@ if ! "$BIN/picom" --version 2>/dev/null | grep -q "^$PICOM_TAG "; then
     ok "picom $PICOM_TAG installed"
 fi
 build_c "$HERE/desktop-switch.c" desktop-switch
-install_bin "$HERE/desktop-slide"
+install_bin "$HERE/desktop-slide" "$HERE/picom-slide"
 [[ "$(install_file "$HERE/picom.conf" "$HOME/.config/picom/picom.conf")" == changed ]] && ok "Installed ~/.config/picom/picom.conf"
 # "desktop-slide on" turns Xfce's own compositor off and starts picom at login
 xf_record xfwm4 /general/use_compositing bool
-track_file "$AUTOSTART/picom-slide.desktop"; mkd "$AUTOSTART"; track_proc picom
+track_file "$AUTOSTART/picom-slide.desktop"; mkd "$AUTOSTART"; track_proc picom-slide picom
 # First install: on. A re-run keeps your choice (Settings > Desktop & Dock can turn it off) and does not
 # restart picom, which would flicker the screen: it only starts it if it should be running and is not.
 slide_mark="$HOME/.config/xfce-macos/slide-set"
 mkd "$(dirname "$slide_mark")"
 if [[ -f "$AUTOSTART/picom-slide.desktop" ]]; then          # already on (this or an earlier install)
     touch "$slide_mark"
+    # (earlier installs started picom directly: from the next login it runs under picom-slide, which restarts it)
+    printf '[Desktop Entry]\nType=Application\nName=Desktop Slide (picom)\nExec=%s/.local/bin/picom-slide\nX-GNOME-Autostart-enabled=true\n' "$HOME" > "$AUTOSTART/picom-slide.desktop"
     pgrep -u "$USER" -x picom >/dev/null || "$BIN/desktop-slide" on >/dev/null
     ok "Desktop slide kept on"
 elif [[ ! -f "$slide_mark" ]]; then                          # first install

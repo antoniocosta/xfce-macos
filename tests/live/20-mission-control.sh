@@ -166,6 +166,14 @@ for f in bad cut; do
 done
 xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -r
 
+t_begin "mission-control: the show-desktop corner does nothing behind it"
+reset_desktops
+A=$(open_win mc-a); wmctrl -i -a "$A"; sleep 0.3
+mc_open
+"$BIN/show-desktop"; sleep 0.6
+mc --close; sleep 0.3
+check "the window was not hidden"          bash -c "! xprop -id $A _NET_WM_STATE | grep -q HIDDEN"
+
 t_begin "mission-control: windows and desktops changing while it is open show up"
 reset_desktops
 A=$(open_win mc-a); B=$(open_win mc-b)

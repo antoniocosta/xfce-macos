@@ -1,0 +1,17 @@
+#!/bin/bash
+# picom-slide: runs picom for the desktop slide, and starts it again if it dies. If it keeps dying
+# right after it starts (a GPU driver problem), Xfce's own compositor is switched back on, so the
+# screen is never left without one. `desktop-slide on|off` starts and stops this.
+fails=0
+while true; do
+    start=$(date +%s)
+    "$HOME/.local/bin/picom" --config "$HOME/.config/picom/picom.conf"
+    xprop -root >/dev/null 2>&1 || exit 0       # the session is over (logged out): stop
+    if [ $(( $(date +%s) - start )) -lt 5 ]; then fails=$((fails + 1)); else fails=0; fi
+    if [ "$fails" -ge 3 ]; then
+        xfconf-query -c xfwm4 -p /general/use_compositing -s true
+        rm -f "$HOME/.config/autostart/picom-slide.desktop"
+        exit 1
+    fi
+    sleep 1
+done

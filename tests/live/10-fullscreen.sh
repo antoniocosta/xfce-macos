@@ -54,6 +54,17 @@ check "the new window is not on the full-screen app's desktop" bash -c "[ \$(des
 eq "it went to the desktop before the Space"  "$(desk_of "$C")" 1
 eq "and the origin was put right"             "$(origin_of "$A")" 1
 
+t_begin "fullscreen: a restart half way through making a Space doesn't make a second one"
+reset_desktops; start_fullscreen
+A=$(open_win fs-a); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2
+wmctrl -i -r "$A" -b add,fullscreen
+wait_until 3 bash -c "[ \$(ndesk) = 5 ]"; sleep 0.3
+xprop -id "$A" -remove _MACOS_FULLSCREEN_ORIGIN          # as if the program had been stopped before it wrote the origin
+start_fullscreen; sleep 0.5
+eq "still one Space"                      "$(ndesk)" 5
+eq "the app is still on it"               "$(desk_of "$A")" 2
+eq "it knows where it came from"          "$(origin_of "$A")" 1
+
 t_begin "fullscreen: leaving and re-entering at once keeps the bookkeeping straight"
 reset_desktops; start_fullscreen
 A=$(open_win fs-a); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2
@@ -117,7 +128,7 @@ t_begin "fullscreen: a restart of the program doesn't strand a window"
 reset_desktops; start_fullscreen
 A=$(open_win fs-a); wmctrl -i -r "$A" -t 1; go 1; wmctrl -i -a "$A"; sleep 0.2
 wmctrl -i -r "$A" -b add,fullscreen
-wait_until 3 bash -c "[ \$(ndesk) = 5 ]"
+wait_until 3 bash -c "[ \$(ndesk) = 5 ] && [ -n \"\$(origin_of $A)\" ]"; sleep 0.3
 start_fullscreen
 wmctrl -i -r "$A" -b remove,fullscreen
 wait_until 3 bash -c "[ \$(ndesk) = 4 ]"
