@@ -1,0 +1,4 @@
+# Lets the logged-in user (group "input", which Toshy needs anyway) change the keyboard backlight
+# directly. Through logind it only works while the session is in the foreground, and the display
+# goes to sleep while the lock screen has the foreground, so the light could not follow it.
+SUBSYSTEM=="leds", KERNEL=="*kbd_backlight", ACTION=="add|change", RUN+="/bin/chgrp input /sys%p/brightness", RUN+="/bin/chmod g+w /sys%p/brightness"

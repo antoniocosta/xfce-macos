@@ -7,7 +7,7 @@ fades on in the dark and off in bright light. Manual changes win: if you change 
 brightness yourself, that offset from the curve is remembered (like macOS), and the
 keyboard keeps the level you last chose. The keyboard light also goes off when the screen goes to
 sleep for lack of activity (the screen's own power-save time, set in Power Manager, so there is one
-setting for both) and comes back at the first key press or touch (idle-watch tells it, no polling).
+setting for both) and comes back at the first key press or touch.
 
 Brightness is set through logind (org.freedesktop.login1.Session.SetBrightness), so no root
 is needed. Settings: `auto-brightness --settings` (also in Xfce's Settings Manager) writes
@@ -91,7 +91,34 @@ def session_path():
     return f"/org/freedesktop/login1/session/{sid}" if sid else "/org/freedesktop/login1/session/auto"
 
 
+def panel_path():
+    """The internal screen's power state in the kernel ("On" / "Off"): true whatever put it to sleep (the idle
+    timer, the lock screen, the hot corner, the lid), and what the user sees."""
+    for pattern in ("eDP", "LVDS", "DSI"):
+        found = sorted(glob.glob(f"/sys/class/drm/card*-{pattern}*/dpms"))
+        if found:
+            return found[0]
+    return None
+
+
+def panel_asleep(path):
+    try:
+        with open(path) as f:
+            return f.read().strip() == "Off"
+    except OSError:
+        return False
+
+
 def set_brightness(session, subsystem, name, value):
+    if subsystem == "leds":
+        # straight to the kernel when the udev rule allows it: logind refuses ("Session is not in foreground")
+        # while the lock screen has the display, which is when the screen goes to sleep
+        try:
+            with open(f"/sys/class/leds/{name}/brightness", "w") as f:
+                f.write(str(int(value)))
+            return
+        except OSError:
+            pass
     subprocess.run(["busctl", "call", "org.freedesktop.login1", session, "org.freedesktop.login1.Session",
                     "SetBrightness", "ssu", subsystem, name, str(int(value))],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -136,6 +163,21 @@ def start_idle_watch():
         return None
 
 
+def wait_for_panel(path, seconds, asleep):
+    """Sleep up to `seconds`, looking at the screen's power state every second; returns (asleep, changed)
+    as soon as it changes. (The kernel gives no signal for it, and the loop wakes every 2 s for the light
+    sensor anyway.)"""
+    end = time.monotonic() + seconds
+    while True:
+        left = end - time.monotonic()
+        if left <= 0:
+            return asleep, False
+        time.sleep(min(1.0, left))
+        now = panel_asleep(path)
+        if now != asleep:
+            return now, True
+
+
 def wait_for_idle_event(proc, seconds, idle):
     """Sleep up to `seconds`, but wake at once when idle-watch speaks. Returns (idle, changed, proc)."""
     if proc is None:
@@ -176,8 +218,12 @@ def main():
     last_kbd = read_int(f"{kbd}/brightness") if kbd else None
     kbd_on = None
     kbd_user_off = False      # you switched the keyboard light off: leave it until the room gets bright
-    idle_proc = start_idle_watch()
-    idle = False              # the screen's power-save time has passed: keyboard light off until you are back
+    # The keyboard light follows the screen: off while it sleeps, on when it wakes. The kernel says which
+    # (whatever put it to sleep); where it does not (no internal panel found), idle-watch stands in.
+    panel = panel_path()
+    idle_proc = None if panel else start_idle_watch()
+    idle = False              # (without a panel) the screen's power-save time has passed
+    asleep = panel_asleep(panel) if panel else False
     idle_changed = False
     failed = False            # the keyboard light would not change (logged once, not every 2 seconds)
 
@@ -227,9 +273,10 @@ def main():
                 kbd_on = False
             elif not kbd_on and lux_s < KBD_ON_LUX:
                 kbd_on = True
-            target = kbd_level if kbd_on and not kbd_user_off and not idle else 0
+            away = asleep if panel else idle
+            target = kbd_level if kbd_on and not kbd_user_off and not away else 0
             if idle_changed:
-                log(f"{'idle' if idle else 'active'}: keyboard light {cur} -> {target}")
+                log(f"screen {'asleep' if away else 'awake'}: keyboard light {cur} -> {target}")
             if target != cur:
                 n = 3 if idle_changed else 12          # fade over ~0.6 s; at once when the screen sleeps or you are back
                 for i in range(1, n + 1):
@@ -250,7 +297,10 @@ def main():
         elif kbd:
             last_kbd = read_int(f"{kbd}/brightness")
 
-        idle, idle_changed, idle_proc = wait_for_idle_event(idle_proc, SAMPLE_S, idle)
+        if panel:
+            asleep, idle_changed = wait_for_panel(panel, SAMPLE_S, asleep)
+        else:
+            idle, idle_changed, idle_proc = wait_for_idle_event(idle_proc, SAMPLE_S, idle)
 
 
 if __name__ == "__main__":

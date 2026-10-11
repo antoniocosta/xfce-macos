@@ -57,4 +57,24 @@ eq "every corner off: hotcorner isn't started" "$(run_hc)" ""
 t_begin "setup app: the command lines and output handling"
 check "unit tests pass" python3 "$ROOT/macos-xfce/setup-app/test_setup.py"
 
+t_begin "auto-brightness: the keyboard light follows the screen's power state"
+cat > "$tmp/ab_test.py" <<'PYEOF'
+import importlib.machinery, importlib.util, os, sys, tempfile, threading, time
+loader = importlib.machinery.SourceFileLoader("ab", sys.argv[1])
+spec = importlib.util.spec_from_loader("ab", loader); ab = importlib.util.module_from_spec(spec); loader.exec_module(ab)
+d = tempfile.mkdtemp(); path = os.path.join(d, "dpms")
+def put(v): open(path, "w").write(v + "\n")
+put("On");  assert ab.panel_asleep(path) is False, "On is awake"
+put("Off"); assert ab.panel_asleep(path) is True, "Off is asleep"
+assert ab.panel_asleep(os.path.join(d, "missing")) is False, "unreadable counts as awake"
+put("On")
+threading.Timer(0.4, put, ["Off"]).start()
+t0 = time.monotonic(); asleep, changed = ab.wait_for_panel(path, 5, False)
+assert asleep is True and changed is True and time.monotonic() - t0 < 2.5, "wakes when the screen goes to sleep"
+put("On"); asleep, changed = ab.wait_for_panel(path, 1.2, False)
+assert asleep is False and changed is False, "nothing happens while it stays awake"
+print("ok")
+PYEOF
+eq "panel state, waiting for a change" "$(python3 "$tmp/ab_test.py" "$ROOT/macos-xfce/auto-brightness/auto-brightness" 2>&1 | tail -1)" ok
+
 t_summary
