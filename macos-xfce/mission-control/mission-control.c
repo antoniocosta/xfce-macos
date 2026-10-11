@@ -10,7 +10,7 @@
  *
  * For tests: with MISSION_CONTROL_LAYOUT=<file> set, every redraw writes where the desktops, the +
  * and the windows are drawn to that file (one per line: "desk N x y w h picture name",
- * "plus x y w h", "item 0xWINDOW x y w h [min]", "view N", "cur N").
+ * "plus x y w h", "item 0xWINDOW x y w h [min [img]]", "view N", "cur N").
  *
  * Usage: mission-control            toggle (asks the running copy; opens once if none runs)
  *        mission-control --open     open (3-finger swipe up); --close: close (swipe down)
@@ -67,6 +67,7 @@ struct win {                /* a window on any desktop (for the bar) */
     char title[256], app[64];
     cairo_surface_t *icon;
     /* current desktop only, while open */
+    int pm_cached;          /* pm belongs to wpix[] (a minimized window's last look): not ours to free */
     Pixmap pm;
     cairo_surface_t *surf;
     double tx, ty, tw, th;  /* where it is drawn */
@@ -88,6 +89,15 @@ struct snap {                               /* a desktop's picture and the windo
 };
 static struct snap snaps[MAX_SNAP];
 static long snap_due = -1;
+
+/* The last look of windows. The compositor keeps every window's image; a name for it (a Composite
+ * "window pixmap") stays valid after the window is minimized, with what it showed. So for each window
+ * showing on the current desktop we keep a name, renewed whenever things settle, at no cost beyond a handle
+ * on the X server. A minimized window is then drawn from it. (Needs a compositor: Xfce's or picom.) */
+#define MAX_PIX 64
+struct wpix { Window frame; Pixmap pm; Visual *vis; int wd, ht; };
+static struct wpix wpix[MAX_PIX];
+static int nwpix;
 
 static int is_open;
 static cairo_surface_t *bg;                 /* the desktop's wallpaper (server side), while open */
@@ -261,7 +271,7 @@ static int is_normal_window(Window w) {        /* ...and showing (the desktop pi
 static void free_wins(void) {
     for (int i = 0; i < nwins; i++) {
         if (wins[i].surf) cairo_surface_destroy(wins[i].surf);
-        if (wins[i].pm) XFreePixmap(dpy, wins[i].pm);
+        if (wins[i].pm && !wins[i].pm_cached) XFreePixmap(dpy, wins[i].pm);
         if (wins[i].icon) cairo_surface_destroy(wins[i].icon);
     }
     nwins = nitems = 0;
@@ -288,9 +298,16 @@ static void read_windows(void) {
         v->icon = load_icon(w);
         if (d == view && (a.map_state == IsViewable || v->minimized) && !v->fullscreen_space) {   /* a full-screen
                                                          app is its own Space: only in the bar */
-            if (!v->minimized) {                          /* (a minimized window has no image to show) */
+            if (!v->minimized) {
                 v->pm = XCompositeNameWindowPixmap(dpy, v->frame);
                 if (v->pm) v->surf = cairo_xlib_surface_create(dpy, v->pm, a.visual, a.width, a.height);
+            } else {                                      /* its last look, if we kept one */
+                for (int j = 0; j < nwpix; j++)
+                    if (wpix[j].frame == v->frame) {
+                        v->pm = wpix[j].pm; v->pm_cached = 1;
+                        v->wd = wpix[j].wd; v->ht = wpix[j].ht;
+                        v->surf = cairo_xlib_surface_create(dpy, v->pm, wpix[j].vis, v->wd, v->ht);
+                    }
             }
             cur_items[nitems++] = nwins;
         }
@@ -340,6 +357,37 @@ static int overlap(const struct snap *s, const Window *set, int n) {
         else if (s->set[i] < set[j]) i++; else j++;
     }
     return common;
+}
+
+static void track_pixmaps(void) {
+    unsigned long n; Window *list = client_list(&n);
+    long curd = get_card(root, A_CURDESK, 0);
+    Window frames[MAX_WIN]; int nf = 0;
+    for (unsigned long i = 0; list && i < n && nf < MAX_WIN; i++) frames[nf++] = frame_of(list[i]);
+    for (int i = nwpix - 1; i >= 0; i--) {              /* windows that are gone */
+        int there = 0;
+        for (int j = 0; j < nf; j++) if (frames[j] == wpix[i].frame) there = 1;
+        if (!there) { XFreePixmap(dpy, wpix[i].pm); wpix[i] = wpix[--nwpix]; }
+    }
+    for (unsigned long i = 0; list && i < n && i < (unsigned long)nf; i++) {
+        long d = get_card(list[i], A_DESK, -1);
+        XWindowAttributes a;
+        if (d != curd || !is_normal_window(list[i]) || !XGetWindowAttributes(dpy, frames[i], &a)
+            || a.map_state != IsViewable || a.width < 2 || a.height < 2) continue;
+        Pixmap pm = XCompositeNameWindowPixmap(dpy, frames[i]);
+        Window r; int x, y; unsigned int w, h, bw, depth;
+        if (!pm || !XGetGeometry(dpy, pm, &r, &x, &y, &w, &h, &bw, &depth)) {   /* no compositor: no image */
+            if (pm) XFreePixmap(dpy, pm);
+            continue;
+        }
+        int k = -1;
+        for (int j = 0; j < nwpix; j++) if (wpix[j].frame == frames[i]) k = j;
+        if (k >= 0) XFreePixmap(dpy, wpix[k].pm);
+        else if (nwpix < MAX_PIX) k = nwpix++;
+        else { XFreePixmap(dpy, pm); continue; }
+        wpix[k] = (struct wpix){frames[i], pm, a.visual, (int)w, (int)h};
+    }
+    if (list) XFree(list);
 }
 
 static void take_snapshot(void) {             /* the current desktop, as it looks now */
@@ -737,7 +785,7 @@ static void dump_layout(void) {   /* for tests (MISSION_CONTROL_LAYOUT) */
     if (plus_w > 0) fprintf(f, "plus %.0f %.0f %.0f %.0f\n", plus_x, plus_y, plus_w, plus_h);
     for (int k = 0; k < nitems; k++) {
         struct win *v = &wins[cur_items[k]];
-        fprintf(f, "item 0x%lx %.0f %.0f %.0f %.0f%s\n", v->w, v->tx, v->ty, v->tw, v->th, v->minimized ? " min" : "");
+        fprintf(f, "item 0x%lx %.0f %.0f %.0f %.0f%s\n", v->w, v->tx, v->ty, v->tw, v->th, v->minimized ? (v->surf ? " min img" : " min") : "");
     }
     fclose(f);
     rename(tmp, path);
@@ -791,8 +839,8 @@ static void draw(void) {
             cairo_scale(cr, w / v->wd, h / v->ht);
             cairo_set_source_surface(cr, v->surf, 0, 0);
             cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
-            cairo_paint(cr);
-        } else if (v->minimized) {                       /* dimmed, with its icon: it is in the Dock on a Mac */
+            cairo_paint_with_alpha(cr, v->minimized ? 0.6 : 1.0);   /* (a minimized one is dimmed) */
+        } else if (v->minimized) {                       /* no last look kept: dimmed, with its icon */
             cairo_set_source_rgba(cr, 0.2, 0.2, 0.22, 0.55);
             cairo_paint(cr);
             if (v->icon) {
@@ -1244,7 +1292,7 @@ int main(int argc, char **argv) {
             long left = snap_due - now_ms();
             if (left <= 0) {
                 snap_due = -1;
-                if (!is_open) take_snapshot();
+                if (!is_open) { track_pixmaps(); take_snapshot(); }
             } else timeout = (int)left;
         }
         if (refresh_due >= 0) {

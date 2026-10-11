@@ -14,7 +14,7 @@ if [[ -z "${LIVE_INSIDE:-}" ]]; then
     chmod 700 "$tmp/run"
     exec env -i PATH="$tmp/bin:/usr/local/bin:/usr/bin:/bin" HOME="$tmp/home" \
         XDG_CONFIG_HOME="$tmp/config" XDG_STATE_HOME="$tmp/state" XDG_RUNTIME_DIR="$tmp/run" \
-        LIVE_INSIDE=1 LIVE_TMP="$tmp" LIVE_KEEP_LOG="${LIVE_KEEP_LOG:-}" TERM="${TERM:-dumb}" \
+        LIVE_INSIDE=1 LIVE_TMP="$tmp" LIVE_KEEP_LOG="${LIVE_KEEP_LOG:-}" LIVE_COMPOSITOR="${LIVE_COMPOSITOR:-}" TERM="${TERM:-dumb}" \
         dbus-run-session -- bash "$0" "$@"
 fi
 
@@ -40,9 +40,9 @@ xfset() { xfconf-query -c "$1" -p "$2" -n -t "$3" -s "$4"; }
 xfset xfwm4 /general/workspace_count int 4
 xfset xfwm4 /general/button_layout string "CHM|"
 xfset xfwm4 /general/wrap_workspaces bool false
-xfset xfwm4 /general/use_compositing bool false
+xfset xfwm4 /general/use_compositing bool "$([[ -n "${LIVE_COMPOSITOR:-}" ]] && echo true || echo false)"   # LIVE_COMPOSITOR=1: with xfwm4's own compositor
 xfset xfwm4 /general/activate_action string switch
-xfwm4 --compositor=off --sm-client-disable >"$LIVE_TMP/xfwm4.log" 2>&1 &
+xfwm4 --compositor=$([[ -n "${LIVE_COMPOSITOR:-}" ]] && echo on || echo off) --sm-client-disable >"$LIVE_TMP/xfwm4.log" 2>&1 &
 WM=$!
 wait_until 10 bash -c 'xprop -root _NET_SUPPORTING_WM_CHECK | grep -q "window id"' || { echo "xfwm4 did not start"; exit 1; }
 wait_until 10 bash -c 'xprop -root _NET_NUMBER_OF_DESKTOPS | grep -q "= 4"'

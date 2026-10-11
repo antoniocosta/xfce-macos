@@ -349,8 +349,10 @@ their icons (and the title of the one under the pointer). As on macOS, a full-sc
 in the bar, never among the windows; opened from a full-screen app, Mission Control shows the
 windows of the desktop that app came from (and goes back to the app if you pick nothing).
 
-- **Minimized windows** are shown too, dimmed with their icon and a small yellow badge, and a click
-  brings them back. (On a Mac they live in the Dock and Mission Control leaves them out; here a
+- **Minimized windows** are shown too, dimmed, with a small yellow badge, and a click brings them
+  back. The tile shows the window's last look (the compositor keeps every window's image, and the
+  program holds a handle to it, so there is nothing to copy; it needs the compositor, picom or Xfce's,
+  and a window minimized within a second of appearing shows its icon instead). (On a Mac they live in the Dock and Mission Control leaves them out; here a
   window that minimizes by itself, or that the show-desktop corner hid, is never out of sight.)
 - Click a window to go to it; click a desktop to switch to it; Esc, F3, Ctrl+↑, a 3-finger swipe
   down or a click on empty space closes it.

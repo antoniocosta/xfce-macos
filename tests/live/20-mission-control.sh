@@ -180,6 +180,20 @@ wait_until 3 bash -c "! xprop -id $B _NET_WM_STATE | grep -q HIDDEN"
 check "clicking it brings it back"         bash -c "! xprop -id $B _NET_WM_STATE | grep -q HIDDEN"
 eq "and it is the active window"           "$(active)" "$(hex "$B")"
 
+t_begin "mission-control: a minimized window keeps its last look (needs a compositor: LIVE_COMPOSITOR=1)"
+if [[ -n "${LIVE_COMPOSITOR:-}" ]]; then
+    reset_desktops
+    A=$(open_win mc-a); B=$(open_win mc-b)
+    sleep 2                                              # let the daemon note the windows' images
+    xdotool windowminimize "$B"; sleep 0.6
+    mc_open
+    wait_until 3 bash -c "grep -q '^item $(hex "$B") .* min img' '$MISSION_CONTROL_LAYOUT'"
+    eq "the minimized window has its last look" "$(lay | awk -v w="$(hex "$B")" '$1=="item" && $2==w {print $7, $8}')" "min img"
+    mc --close; sleep 0.3
+else
+    echo "  (skipped: no compositor in the test display)"
+fi
+
 t_begin "mission-control: the show-desktop corner does nothing behind it"
 reset_desktops
 A=$(open_win mc-a); wmctrl -i -a "$A"; sleep 0.3
