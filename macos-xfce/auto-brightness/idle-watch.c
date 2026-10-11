@@ -5,7 +5,10 @@
  *
  * The time is the one the screen uses: the X server's DPMS timeout, which Xfce's Power Manager sets
  * from its "Display" settings (and swaps when you plug or unplug the charger). The smallest of the
- * standby/suspend/off times that is not zero. DPMS off or all zero: it never says "idle".
+ * standby/suspend/off times that is not zero, and of the screen saver's time (that is when the screen
+ * locker locks, and locking hands the session to the login screen, which may stop the keyboard light
+ * from being changed any more). It says "idle" 10 seconds before that, so the light is already off when
+ * the screen blanks or locks. DPMS off and no screen saver: it never says "idle".
  * It is read again at every "active", so a change in Power Manager is picked up.
  *
  * For tests: IDLE_WATCH_SECONDS=N uses N seconds instead of the DPMS time.
@@ -27,18 +30,24 @@ static int sync_event_base;
 static long long idle_threshold_ms(void) {
     const char *over = getenv("IDLE_WATCH_SECONDS");
     if (over && atol(over) > 0) return atol(over) * 1000LL;
-    int dummy1, dummy2;
-    if (!DPMSQueryExtension(dpy, &dummy1, &dummy2) || !DPMSCapable(dpy)) return NEVER_MS;
-    CARD16 level; BOOL on;
-    DPMSInfo(dpy, &level, &on);
-    if (!on) return NEVER_MS;
-    CARD16 standby = 0, suspend = 0, off = 0;
-    DPMSGetTimeouts(dpy, &standby, &suspend, &off);
     long long best = 0;
-    CARD16 t[3] = {standby, suspend, off};
-    for (int i = 0; i < 3; i++)
-        if (t[i] && (!best || t[i] * 1000LL < best)) best = t[i] * 1000LL;
-    return best ? best : NEVER_MS;
+    int dummy1, dummy2;
+    if (DPMSQueryExtension(dpy, &dummy1, &dummy2) && DPMSCapable(dpy)) {
+        CARD16 level; BOOL on;
+        DPMSInfo(dpy, &level, &on);
+        if (on) {
+            CARD16 standby = 0, suspend = 0, off = 0;
+            DPMSGetTimeouts(dpy, &standby, &suspend, &off);
+            CARD16 t[3] = {standby, suspend, off};
+            for (int i = 0; i < 3; i++)
+                if (t[i] && (!best || t[i] * 1000LL < best)) best = t[i] * 1000LL;
+        }
+    }
+    int timeout, interval, prefer, allow;                      /* the screen saver / locker time */
+    XGetScreenSaver(dpy, &timeout, &interval, &prefer, &allow);
+    if (timeout > 0 && (!best || timeout * 1000LL < best)) best = timeout * 1000LL;
+    if (!best) return NEVER_MS;
+    return best > 30000 ? best - 10000 : best;                 /* a head start: off before it blanks or locks */
 }
 
 static XSyncValue value_of(long long ms) {

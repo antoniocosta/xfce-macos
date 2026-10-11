@@ -331,7 +331,11 @@ The keyboard light also goes off when the screen goes to sleep for lack of activ
 back at the first key press or touch. It follows the screen's own power-save time (the one Xfce's Power
 Manager sets from its Display settings, swapped when you plug or unplug the charger), so there is
 one setting for both and nothing new to configure. `idle-watch`, a small C program, asks the X
-server to tell it when that time has passed and when you are back, so it sleeps in between.
+server to tell it when that time has passed and when you are back, so it sleeps in between. The
+time is the earliest of the display's power-save time and the screen saver's (the screen locker
+locks then, and locking hands your session to the login screen, which can stop the light from being
+changed), and the light goes off 10 seconds before it. If the light ever does not change, a few lines
+in `~/.local/state/auto-brightness.log` say what it was asked to do and what happened.
 
 Installs only where there is a light sensor.
 
