@@ -291,7 +291,8 @@ directions, so `desktop-switch` marks the windows that leave and arrive with
 screen width in 0.35 s. Switches from Cmd+Tab or Mission Control stay instant, as on macOS.
 `desktop-switch` is a small C program on one X connection (a few milliseconds, no process per
 window): quick repeats each count, the newest switch clears the marks, and it never wraps
-around. picom runs under `picom-slide`, which starts it again if it dies; `desktop-slide on` checks
+around. picom runs under `picom-slide`, which switches Xfce's own compositor off before every start (at a
+login xfwm4 can still have it on for a moment, and picom then refuses to start) and starts picom again if it dies; `desktop-slide on` checks
 that picom really started, and if it keeps failing Xfce's own compositor is switched back on, so the
 screen is never left without one.
 
