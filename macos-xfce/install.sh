@@ -87,6 +87,16 @@ setup_packages() {
         printf '%s\n' "$zcfg" | sudo tee /etc/default/zramswap >/dev/null
         sudo systemctl restart zramswap && ok "zram swap on (zstd, up to half the RAM)"
     fi
+    # The proprietary Broadcom Wi-Fi driver (wl: old MacBooks) hangs the machine when TLP puts its card into
+    # runtime power saving (seen at a charger change right before a freeze): keep that driver out of it.
+    if is_laptop && [[ -d /sys/module/wl ]] && command -v tlp >/dev/null; then
+        local tcfg='RUNTIME_PM_DRIVER_DENYLIST="mei_me nouveau radeon wl"'
+        if [[ "$(cat /etc/tlp.d/90-xfce-macos.conf 2>/dev/null)" != "$tcfg" ]]; then
+            track_sys /etc/tlp.d/90-xfce-macos.conf
+            printf '%s\n' "$tcfg" | sudo tee /etc/tlp.d/90-xfce-macos.conf >/dev/null && sudo tlp start >/dev/null \
+                && ok "TLP leaves the Broadcom Wi-Fi driver (wl) out of runtime power saving"
+        fi
+    fi
     ok "Packages installed"
 }
 
