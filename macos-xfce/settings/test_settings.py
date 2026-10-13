@@ -64,7 +64,8 @@ class Dock(unittest.TestCase):
 
 class Trackpad(unittest.TestCase):
     PROPS = ("libinput Tapping Enabled (308):\t1\nlibinput Natural Scrolling Enabled (316):\t0\n"
-             "libinput Scrolling Pixel Distance (343):\t15\nlibinput Accel Speed (328):\t-0.040000\n")
+             "libinput Scrolling Pixel Distance (343):\t15\nlibinput Accel Speed (328):\t-0.040000\n"
+             "libinput Disable While Typing Enabled (318):\t1\n")
 
     def runner(self):
         return Fake({("xinput", "list", "--id-only"): (0, "3\n7\n"),
@@ -78,6 +79,7 @@ class Trackpad(unittest.TestCase):
     def test_state(self):
         st = core.trackpad_state(self.runner())
         self.assertEqual((st["tap"], st["natural"], st["scroll_distance"], st["speed"]), (True, False, 15, -0.04))
+        self.assertTrue(st["ignore_typing"])             # libinput's default, until the login step turns it off
 
     def test_no_touchpad(self):
         self.assertIsNone(core.trackpad_state(Fake()))
@@ -100,6 +102,17 @@ class Trackpad(unittest.TestCase):
         self.assertIn("/bcm5974/Properties/libinput_Tapping_Enabled", fake.calls[1])
         self.assertEqual(fake.calls[1][-1], "0")
 
+    def test_ignore_while_typing_is_off_at_login_unless_chosen(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "t.conf")
+            fake = self.runner()                                   # nothing saved: the Mac way, off
+            core.apply_trackpad_conf(fake, p)
+            self.assertIn(["xinput", "set-prop", "7", "libinput Disable While Typing Enabled", "0"], fake.calls)
+            core.save_trackpad_conf({"ignore_typing": "1"}, p)    # chosen on the page: kept
+            fake = self.runner()
+            core.apply_trackpad_conf(fake, p)
+            self.assertIn(["xinput", "set-prop", "7", "libinput Disable While Typing Enabled", "1"], fake.calls)
+
     def test_saved_scroll_distance_is_applied_at_login(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "t.conf")
@@ -110,10 +123,11 @@ class Trackpad(unittest.TestCase):
             self.assertIn(["xinput", "set-prop", "7", "libinput Scrolling Pixel Distance", "9"], sets)
             self.assertIn(["xinput", "set-prop", "7", "libinput Accel Speed", "0.25"], sets)
 
-    def test_nothing_saved_nothing_applied(self):
+    def test_nothing_saved_only_the_mac_default_is_applied(self):
         fake = self.runner()
-        core.apply_trackpad_conf(fake, "/nonexistent")
-        self.assertEqual([c for c in fake.calls if c[:2] == ["xinput", "set-prop"]], [])
+        core.apply_trackpad_conf(fake, "/nonexistent")           # no scroll distance or speed of ours; just the default
+        self.assertEqual([c for c in fake.calls if c[:2] == ["xinput", "set-prop"]],
+                         [["xinput", "set-prop", "7", "libinput Disable While Typing Enabled", "0"]])
 
 
 class Brightness(unittest.TestCase):

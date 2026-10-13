@@ -166,7 +166,7 @@ def load_trackpad_conf(path=None):
     cp = configparser.ConfigParser()
     cp.read(path or TRACKPAD_CONF)
     s = cp["trackpad"] if cp.has_section("trackpad") else {}
-    return {k: s[k] for k in ("scroll_distance", "speed") if k in s}
+    return {k: s[k] for k in ("scroll_distance", "speed", "ignore_typing") if k in s}
 
 
 def save_trackpad_conf(values, path=None):
@@ -190,6 +190,7 @@ def trackpad_state(runner=run):
         "natural": one("libinput Natural Scrolling Enabled", "0") == "1",
         "scroll_distance": int(one("libinput Scrolling Pixel Distance", "15")),
         "speed": float(one("libinput Accel Speed", "0")),
+        "ignore_typing": one("libinput Disable While Typing Enabled", "1") == "1",
     }
 
 
@@ -206,7 +207,9 @@ def set_xfce_pointer(name, prop, value, runner=run):
 
 
 def apply_trackpad_conf(runner=run, path=None):
-    """At login: put back the scroll distance and tracking speed the Trackpad page saved."""
+    """At login: put back the scroll distance, tracking speed and "ignore while typing" the Trackpad page saved.
+    Ignoring the trackpad while a key is down is Linux's default and not a Mac's: it stops Space + drag
+    (panning in Figma or Photoshop), so it is off unless you turn it on."""
     saved = load_trackpad_conf(path)
     dev, _ = find_touchpad(runner)
     if dev is None:
@@ -215,6 +218,7 @@ def apply_trackpad_conf(runner=run, path=None):
         xinput_set(dev, "libinput Scrolling Pixel Distance", [saved["scroll_distance"]], runner)
     if "speed" in saved:
         xinput_set(dev, "libinput Accel Speed", [saved["speed"]], runner)
+    xinput_set(dev, "libinput Disable While Typing Enabled", [1 if saved.get("ignore_typing") == "1" else 0], runner)
     return True
 
 

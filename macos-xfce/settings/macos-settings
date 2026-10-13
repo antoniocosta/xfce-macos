@@ -230,6 +230,13 @@ def pane_trackpad():
                                         core.xinput_set(st["device"], "libinput Natural Scrolling Enabled", [int(on)]))),
         note="Content follows your fingers, as on a Mac.")
 
+    def ignore_typing(on):
+        core.xinput_set(st["device"], "libinput Disable While Typing Enabled", [int(on)])
+        core.save_trackpad_conf({**core.load_trackpad_conf(), "ignore_typing": "1" if on else "0"})
+    row(Gtk, grid, 2, "Ignore the trackpad while typing:", switch(Gtk, st["ignore_typing"], ignore_typing),
+        note="Off, as on a Mac, so holding Space and dragging works (panning in Figma or Photoshop). "
+             "Turn it on if your palm touches the trackpad while you type.")
+
     def speed(v):
         core.xinput_set(st["device"], "libinput Accel Speed", [round(v, 2)])
         core.save_trackpad_conf({**core.load_trackpad_conf(), "speed": round(v, 2)})
