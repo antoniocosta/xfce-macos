@@ -119,16 +119,13 @@ eq "the minimized window moved down one"   "$(desk_of "$M")" 1
 eq "and the one after it"                  "$(desk_of "$C")" 2
 mc --close; sleep 0.3
 
-t_begin "mission-control: a desktop with a full-screen Space can't be removed; the Space moves with it"
+t_begin "mission-control: a desktop moves together with its full-screen Space"
 reset_desktops; start_fullscreen
 A=$(open_win mc-a); F=$(open_win mc-full); B=$(open_win mc-b)
 wmctrl -i -r "$A" -t 0; wmctrl -i -r "$F" -t 1; wmctrl -i -r "$B" -t 3; go 1; wmctrl -i -a "$F"; sleep 0.2
 wmctrl -i -r "$F" -b add,fullscreen
 wait_until 3 bash -c "[ \$(curdesk) = 2 ]"; sleep 0.5; go 0
 mc_open
-read -r x y <<<"$(desk_corner 1)"; xdotool mousemove $((x + 20)) $((y + 20)); sleep 0.2; click_at "$x" "$y"
-eq "nothing removed"                       "$(ndesk)" 5
-go 0; mc_open
 read -r x1 y1 <<<"$(desk_center 1)"; read -r x2 y2 <<<"$(desk_center 4)"
 drag "$x1" "$y1" $((x2 + 30)) "$y2"
 eq "the Space moved with its desktop"      "$(desk_of "$F")" 4
@@ -140,6 +137,61 @@ wmctrl -i -r "$F" -b remove,fullscreen
 wait_until 4 bash -c "[ \$(ndesk) = 4 ]"; sleep 0.5
 eq "leaving full screen goes back to its desktop" "$(desk_of "$F")" 3
 stop_fullscreen
+
+t_begin "mission-control: a desktop with a full-screen Space after it can be removed; the Space follows the one before"
+reset_desktops; start_fullscreen
+A=$(open_win mc-a); F=$(open_win mc-full); B=$(open_win mc-b)
+wmctrl -i -r "$A" -t 0; wmctrl -i -r "$F" -t 1; wmctrl -i -r "$B" -t 3; go 1; wmctrl -i -a "$F"; sleep 0.2
+wmctrl -i -r "$F" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 2 ]"; sleep 0.5; go 0
+eq "five desktops: 0, 1, its Space 2, 3, 4" "$(ndesk)" 5
+mc_open
+read -r x y <<<"$(desk_corner 1)"; xdotool mousemove $((x + 20)) $((y + 20)); sleep 0.2; click_at "$x" "$y"
+wait_until 4 bash -c "[ \$(ndesk) = 4 ]"
+eq "the desktop is gone"                   "$(ndesk)" 4
+eq "the Space moved up with it"            "$(desk_of "$F")" 1
+eq "and now comes from the desktop before" "$(origin_of "$F")" 0
+eq "later windows moved down one"          "$(desk_of "$B")" 3
+eq "the first desktop's window stayed"     "$(desk_of "$A")" 0
+eq "the app is still full screen"          "$(is_full "$F" && echo yes)" yes
+mc --close; sleep 0.3
+wmctrl -i -r "$F" -b remove,fullscreen
+wait_until 4 bash -c "[ \$(ndesk) = 3 ]"; sleep 0.5
+eq "leaving full screen returns to desktop 0" "$(desk_of "$F")" 0
+stop_fullscreen
+
+t_begin "mission-control: the first desktop can be removed even with a Space after it"
+reset_desktops; start_fullscreen
+A=$(open_win mc-a); F=$(open_win mc-full); B=$(open_win mc-b)
+wmctrl -i -r "$A" -t 0; wmctrl -i -r "$F" -t 0; wmctrl -i -r "$B" -t 1; go 0; wmctrl -i -a "$F"; sleep 0.2
+wmctrl -i -r "$F" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 1 ]"; sleep 0.5; go 0
+eq "five desktops: 0, its Space 1, 2, 3, 4" "$(ndesk)" 5
+eq "B (on the old desktop 2... was 1) is on 2" "$(desk_of "$B")" 2
+mc_open
+read -r x y <<<"$(desk_corner 0)"; xdotool mousemove $((x + 20)) $((y + 20)); sleep 0.2; click_at "$x" "$y"
+wait_until 4 bash -c "[ \$(ndesk) = 4 ]"
+eq "the desktop is gone"                   "$(ndesk)" 4
+eq "its window went to the next desktop"   "$(desk_of "$A")" 0
+eq "which is now the first"                "$(desk_of "$B")" 0
+eq "the Space now follows that desktop"    "$(desk_of "$F")" 1
+eq "and comes from it"                     "$(origin_of "$F")" 0
+mc --close; sleep 0.3
+wmctrl -i -r "$F" -b remove,fullscreen
+wait_until 4 bash -c "[ \$(ndesk) = 3 ]"; sleep 0.5
+eq "leaving full screen returns to desktop 0" "$(desk_of "$F")" 0
+stop_fullscreen
+
+t_begin "mission-control: the last ordinary desktop can't be removed"
+reset_desktops; set_desktops 1; start_fullscreen
+F=$(open_win mc-full); go 0; wmctrl -i -a "$F"; sleep 0.2
+wmctrl -i -r "$F" -b add,fullscreen
+wait_until 3 bash -c "[ \$(ndesk) = 2 ]"; sleep 0.5; go 0
+mc_open
+read -r x y <<<"$(desk_corner 0)"; xdotool mousemove $((x + 20)) $((y + 20)); sleep 0.2; click_at "$x" "$y"
+sleep 0.5
+eq "still two desktops (it and its Space)" "$(ndesk)" 2
+wmctrl -i -r "$F" -b remove,fullscreen; sleep 1.2; stop_fullscreen
 
 t_begin "mission-control: a Space can't be dragged along the bar"
 reset_desktops; start_fullscreen

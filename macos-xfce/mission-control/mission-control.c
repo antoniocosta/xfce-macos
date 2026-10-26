@@ -661,12 +661,15 @@ static int desk_is_space(int d) {
     return 0;
 }
 
-static int desk_has_spaces(int d) {          /* full-screen Spaces came from this desktop */
-    for (int i = 0; i < nwins; i++) if (wins[i].fullscreen_space && wins[i].origin == d) return 1;
-    return 0;
+static int ordinary_desktops(void) {         /* desktops that are not a full-screen app's Space */
+    int k = 0;
+    for (int d = 0; d < ndesk; d++) if (!desk_is_space(d)) k++;
+    return k;
 }
 
-static int can_close(int d) { return ndesk > 1 && !desk_has_spaces(d); }   /* (leave its full-screen apps first) */
+/* Any desktop can be removed, as on a Mac. A full-screen Space goes by leaving full screen. An ordinary one goes
+ * while another ordinary desktop is left; the Spaces that came from it are handed on to a neighbour. */
+static int can_close(int d) { return ndesk > 1 && (desk_is_space(d) || ordinary_desktops() > 1); }
 
 static void draw_desk(cairo_t *cr, int d, double at_x) {
     struct desk kk = desks[d], *k = &kk;
@@ -1063,14 +1066,28 @@ static void remove_desktop(int d) {
     long n = get_card(root, A_NDESK, 1);
     if (n <= 1 || n > MAX_DESK || d < 0 || d >= n) return;
     if (desk_is_space(d)) { leave_full_screen(d); return; }
-    if (desk_has_spaces(d)) return;                      /* full-screen apps came from it: leave them first */
-    long to = -1;                                        /* its windows go to the nearest ordinary desktop */
+    long to = -1;                                        /* its windows go to the nearest ordinary desktop (before it first) */
     for (long x = d - 1; x >= 0 && to < 0; x--) if (!desk_is_space(x)) to = x;
     for (long x = d + 1; x < n && to < 0; x++) if (!desk_is_space(x)) to = x;
-    if (to < 0) return;
+    if (to < 0) return;                                  /* the last ordinary desktop stays */
     long map[MAX_DESK], pmap[MAX_DESK];
-    for (long x = 0; x < n; x++) map[x] = x < d ? x : x - 1;
-    map[d] = map[to];
+    if (to < d) {                                        /* the usual case: later desktops move down one. The Spaces that came
+                                                            from d now follow `to`, whose origin they take over (map[d] = to) */
+        for (long x = 0; x < n; x++) map[x] = x < d ? x : x - 1;
+    } else {                                             /* d is the first desktop and has nothing before it to hand its Spaces
+                                                            to: they go behind the next desktop's own Spaces, in front of the rest */
+        long a = 0, b = 0;
+        while (d + 1 + a < n && desk_is_space(d + 1 + a)) a++;           /* d's Spaces: d+1 .. d+a */
+        while (to + 1 + b < n && desk_is_space(to + 1 + b)) b++;         /* the next desktop's: to+1 .. to+b */
+        for (long x = 0; x < n; x++) {
+            if (x == d) map[x] = 0;
+            else if (x > d && x <= d + a) map[x] = b + (x - d);          /* d's Spaces, after the next desktop's */
+            else if (x == to) map[x] = 0;
+            else if (x > to && x <= to + b) map[x] = x - to;
+            else map[x] = x - 1;
+        }
+    }
+    map[d] = map[to];                                    /* d's windows, and its Spaces' origin, are `to` now */
     memcpy(pmap, map, sizeof map);
     pmap[d] = -1;
     long pend[SP_MAX], was_pending = 0;

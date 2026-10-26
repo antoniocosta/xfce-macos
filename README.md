@@ -361,8 +361,10 @@ windows of the desktop that app came from (and goes back to the app if you pick 
   down or a click on empty space closes it.
 - Drag a window onto a desktop to move it there, or onto **+** to give it a desktop of its own.
 - **+** adds a desktop; the **×** on a hovered desktop removes it (its windows, minimized ones
-  too, move to the nearest ordinary desktop; on a full-screen Space it leaves full screen). A
-  desktop that full-screen apps came from has no ×: leave those apps first.
+  too, move to the nearest ordinary desktop; on a full-screen Space it leaves full screen). Any
+  desktop can go, as on a Mac: the full-screen Spaces that came from it stay (the app stays full
+  screen) and now come from the desktop before it, or the next one if it was the first. Only the last
+  ordinary desktop stays, because a Space needs a desktop to go back to.
 - Drag a desktop along the Spaces bar to reorder the desktops; their windows go with them, and
   its full-screen Spaces stay right after it. A Space itself can't be dragged, and a window can't
   be dropped on one (a Space belongs to its app alone).
