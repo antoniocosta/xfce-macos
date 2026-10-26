@@ -366,8 +366,9 @@ windows of the desktop that app came from (and goes back to the app if you pick 
   screen) and now come from the desktop before it, or the next one if it was the first. Only the last
   ordinary desktop stays, because a Space needs a desktop to go back to.
 - Drag a desktop along the Spaces bar to reorder the desktops; their windows go with them, and
-  its full-screen Spaces stay right after it. A Space itself can't be dragged, and a window can't
-  be dropped on one (a Space belongs to its app alone).
+  its full-screen Spaces stay right after it. A full-screen Space can be dragged too, to any place
+  but the first: it then comes from the desktop before it, and goes back there when you leave
+  full screen. A window can't be dropped on a Space (a Space belongs to its app alone).
 - It follows changes while open: a window closing, a desktop added in Xfce's settings.
 - Up to 16 desktops, full-screen Spaces included, as on macOS (the **+** goes away at 16; an app
   going full screen then stays on its own desktop).

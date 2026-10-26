@@ -193,15 +193,50 @@ sleep 0.5
 eq "still two desktops (it and its Space)" "$(ndesk)" 2
 wmctrl -i -r "$F" -b remove,fullscreen; sleep 1.2; stop_fullscreen
 
-t_begin "mission-control: a Space can't be dragged along the bar"
+t_begin "mission-control: two full-screen Spaces can be put in the other order"
 reset_desktops; start_fullscreen
-F=$(open_win mc-full); wmctrl -i -r "$F" -t 1; go 1; wmctrl -i -a "$F"; sleep 0.2
-wmctrl -i -r "$F" -b add,fullscreen
-wait_until 3 bash -c "[ \$(curdesk) = 2 ]"; sleep 0.5; go 0
+F=$(open_win mc-f1); G=$(open_win mc-f2)
+wmctrl -i -r "$F" -t 0; wmctrl -i -r "$G" -t 0; go 0; wmctrl -i -a "$F"; sleep 0.2; wmctrl -i -r "$F" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 1 ]"; sleep 0.5; go 0; wmctrl -i -a "$G"; sleep 0.2; wmctrl -i -r "$G" -b add,fullscreen
+wait_until 3 bash -c "[ \$(ndesk) = 6 ]"; sleep 0.5; go 0
+eq "the second app's Space is first"       "$(desk_of "$G")" 1
+eq "and the first app's after it"          "$(desk_of "$F")" 2
 mc_open
-read -r x1 y1 <<<"$(desk_center 2)"; read -r x2 y2 <<<"$(desk_center 4)"
+read -r x1 y1 <<<"$(desk_center 1)"; read -r x2 y2 <<<"$(desk_center 2)"
 drag "$x1" "$y1" $((x2 + 30)) "$y2"
-eq "it stayed where it is"                 "$(desk_of "$F")" 2
+eq "they swapped: the first app is on 1"   "$(desk_of "$F")" 1
+eq "the second app is on 2"                "$(desk_of "$G")" 2
+eq "both still come from desktop 0"        "$(origin_of "$F")$(origin_of "$G")" 00
+eq "and are still full screen"             "$(is_full "$F" && is_full "$G" && echo yes)" yes
+mc --close; sleep 0.3
+wmctrl -i -r "$F" -b remove,fullscreen; wmctrl -i -r "$G" -b remove,fullscreen; sleep 1.5; stop_fullscreen
+
+t_begin "mission-control: a full-screen Space can be put behind another desktop, and comes from it"
+reset_desktops; start_fullscreen
+F=$(open_win mc-full); B=$(open_win mc-b)
+wmctrl -i -r "$F" -t 0; wmctrl -i -r "$B" -t 1; go 0; wmctrl -i -a "$F"; sleep 0.2; wmctrl -i -r "$F" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 1 ]"; sleep 0.5; go 0
+eq "B is on 2 (the Space is 1)"            "$(desk_of "$B")" 2
+mc_open
+read -r x1 y1 <<<"$(desk_center 1)"; read -r x2 y2 <<<"$(desk_center 2)"
+drag "$x1" "$y1" $((x2 + 30)) "$y2"
+eq "the Space is now behind B's desktop"   "$(desk_of "$F")" 2
+eq "it comes from that desktop (now 1)"    "$(origin_of "$F")" 1
+eq "B's desktop moved up"                  "$(desk_of "$B")" 1
+mc --close; sleep 0.3
+wmctrl -i -r "$F" -b remove,fullscreen
+wait_until 4 bash -c "[ \$(ndesk) = 4 ]"; sleep 0.5
+eq "leaving full screen goes to that desktop" "$(desk_of "$F")" 1
+stop_fullscreen
+
+t_begin "mission-control: a Space can't be put first"
+reset_desktops; start_fullscreen
+F=$(open_win mc-full); wmctrl -i -r "$F" -t 0; go 0; wmctrl -i -a "$F"; sleep 0.2; wmctrl -i -r "$F" -b add,fullscreen
+wait_until 3 bash -c "[ \$(curdesk) = 1 ]"; sleep 0.5; go 1
+mc_open
+read -r x1 y1 <<<"$(desk_center 1)"; read -r x2 y2 <<<"$(desk_center 0)"
+drag "$x1" "$y1" $((x2 - 30)) "$y2"
+eq "it stays behind its desktop"           "$(desk_of "$F")" 1
 mc --close; sleep 0.3
 wmctrl -i -r "$F" -b remove,fullscreen; sleep 1.2; stop_fullscreen
 

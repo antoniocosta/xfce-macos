@@ -1106,12 +1106,42 @@ static void remove_desktop(int d) {
     refresh();
 }
 
-/* move desktop `from` to position `to`; windows go with their desktop. A full-screen app's Space always
- * stays right after the desktop it came from, so a desktop moves together with its Spaces, and a Space
- * itself cannot be moved */
+/* A full-screen Space dragged to another place (never first: it needs a desktop before it): it comes from the
+ * desktop before its new place, as it would on a Mac where Spaces are simply put in any order */
+static void reorder_space(int from, int to) {
+    long n = get_card(root, A_NDESK, 1);
+    if (to < 1) to = 1;                                  /* the first place is for a desktop */
+    if (n > MAX_DESK || from < 0 || from >= n || to >= n || from == to) return;
+    long order[MAX_DESK], map[MAX_DESK];
+    int k = 0;
+    for (long x = 0; x < n; x++) if (x != from) order[k++] = x;
+    memmove(&order[to + 1], &order[to], sizeof(long) * (n - 1 - to));
+    order[to] = from;
+    for (long i = 0; i < n; i++) map[order[i]] = i;
+    long host = 0;                                       /* the desktop it now follows, by its new number */
+    for (long i = to - 1; i >= 0; i--) if (!desk_is_space((int)order[i])) { host = i; break; }
+    Window moved[8]; int nm = 0;
+    for (int i = 0; i < nwins && nm < 8; i++) if (wins[i].desk == from && wins[i].fullscreen_space) moved[nm++] = wins[i].w;
+    busy(1);
+    move_all(map, n);
+    for (int i = 0; i < nm; i++)                         /* (move_all renumbered its origin; this is the new one) */
+        XChangeProperty(dpy, moved[i], A_ORIGIN, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&host, 1);
+    sp_pending_remap(dpy, root, A_PENDING, map, (int)n);
+    long here = get_card(root, A_CURDESK, 0);
+    if (here >= 0 && here < n && map[here] != here) switch_wait(map[here]);
+    cur = map[cur < n ? cur : n - 1];
+    view = map[view < n ? view : n - 1];
+    busy(0);
+    refresh();
+}
+
+/* move desktop `from` to position `to`; windows go with their desktop. A full-screen app's Space stays right
+ * after the desktop it came from, so a desktop moves together with its Spaces (a Space itself is moved by
+ * reorder_space) */
 static void reorder_desktops(int from, int to) {
     long n = get_card(root, A_NDESK, 1);
-    if (n > MAX_DESK || from < 0 || from >= n || to < 0 || to >= n || from == to || desk_is_space(from)) return;
+    if (n > MAX_DESK || from < 0 || from >= n || to < 0 || to >= n || from == to) return;
+    if (desk_is_space(from)) { reorder_space(from, to); return; }
     int unit[MAX_DESK], ustart[MAX_DESK], ulen[MAX_DESK], nu = 0;
     for (int x = 0; x < n; x++) {
         if (x > 0 && desk_is_space(x)) { unit[x] = unit[x - 1]; ulen[unit[x]]++; }
@@ -1225,7 +1255,7 @@ static void handle(XEvent *e) {
         ptr_x = e->xmotion.x; ptr_y = e->xmotion.y;
         int hi = hover_item, hd = hover_desk, hc = hover_close, hp = hover_plus;
         if (press_item >= 0 && !dragging && hypot(ptr_x - press_x, ptr_y - press_y) > DRAG_PX) dragging = 1;
-        if (press_desk >= 0 && !desk_dragging && !desk_is_space(press_desk) && hypot(ptr_x - press_x, ptr_y - press_y) > DRAG_PX) desk_dragging = 1;
+        if (press_desk >= 0 && !desk_dragging && hypot(ptr_x - press_x, ptr_y - press_y) > DRAG_PX) desk_dragging = 1;
         update_hover(ptr_x, ptr_y);
         if (dragging || desk_dragging || hi != hover_item || hd != hover_desk || hc != hover_close || hp != hover_plus) draw();
         break;
