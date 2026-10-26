@@ -630,6 +630,19 @@ user_pref("browser.newtabpage.activity-stream.showSponsoredTopSites", false);
 user_pref("browser.newtabpage.activity-stream.feeds.section.topstories", false);'"$vaapi" >/dev/null
         ok "Firefox: macOS-like scrolling, leaner memory${vaapi:+, hardware video decoding} (profile $prof; restart Firefox)"
     done
+
+    # Web apps (Mint's Web App Manager) run Firefox with a profile of their own, which has none of the above: video
+    # was decoded on the CPU (two cores busy, 80 C and a loud fan on a 2012 Air). Give each the decoding setting,
+    # one content process fewer and no telemetry. Run this installer again after adding a web app.
+    local wp
+    for wp in "$HOME"/.local/share/ice/firefox/*/; do
+        [[ -d "$wp" ]] || continue
+        upsert_block "${wp}user.js" "// >>> $TAG: macos-xfce" "// <<< $TAG: macos-xfce" \
+'// A lighter web app: fewer processes, no telemetry
+user_pref("dom.ipc.processCount", 2);
+user_pref("datareporting.healthreport.uploadEnabled", false);
+user_pref("toolkit.telemetry.enabled", false);'"$vaapi" >/dev/null && ok "Web app profile $(basename "$wp"): hardware video decoding${vaapi:+ on}, lighter (restart that web app)"
+    done
 }
 
 usage() { sed -n '/^# Usage:/,/^# =====/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
