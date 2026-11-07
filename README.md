@@ -130,6 +130,10 @@ that has been tested.
   **install Linux Mint over a cable or USB tethering first**, then run the installer. That driver (`wl`)
   can hang the whole machine when TLP puts its card into runtime power saving (it happened here right
   after a charger change), so the installer adds `/etc/tlp.d/90-xfce-macos.conf` to keep `wl` out of it.
+- **Bluetooth and Wi-Fi on/off.** On macOS the switch you set stays set after a restart. Mint masks
+  `systemd-rfkill` (the service that saves it) because GNOME's settings daemon does that job, and Xfce has
+  none, so a Bluetooth you switched off came back on at every boot. The installer unmasks it; `--restore`
+  masks it again.
 - **Nvidia graphics (MacBook Pros from about 2008 to 2014).** Use the open-source `nouveau` driver that Mint
   installs, and avoid the old proprietary legacy drivers, which are unmaintained. The desktop slide uses
   picom's OpenGL backend, which has not been tried on Nvidia here.

@@ -97,6 +97,14 @@ setup_packages() {
                 && ok "TLP leaves the Broadcom Wi-Fi driver (wl) out of runtime power saving"
         fi
     fi
+    # Bluetooth and Wi-Fi on/off survive a reboot: systemd-rfkill saves the switch and puts it back at boot.
+    # Mint masks it because GNOME's settings daemon does that job, and Xfce has none (gsd-rfkill is missing),
+    # so a Bluetooth you switched off always came back on.
+    if [[ -e /dev/rfkill ]] && [[ "$(systemctl is-enabled systemd-rfkill.service 2>/dev/null)" == masked ]]; then
+        unit_record system systemd-rfkill.service; unit_record system systemd-rfkill.socket
+        sudo systemctl unmask systemd-rfkill.service systemd-rfkill.socket && sudo systemctl start systemd-rfkill.socket \
+            && ok "Bluetooth and Wi-Fi on/off is remembered across reboots"
+    fi
     ok "Packages installed"
 }
 
